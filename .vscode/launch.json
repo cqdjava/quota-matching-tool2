@@ -1,0 +1,14 @@
+{
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Spring Boot-QuotaMatchingApplication<quota-matching-tool>",
+            "request": "launch",
+            "cwd": "${workspaceFolder}",
+            "mainClass": "com.enterprise.quota.QuotaMatchingApplication",
+            "projectName": "quota-matching-tool",
+            "args": "",
+            "envFile": "${workspaceFolder}/.env"
+        }
+    ]
+}
