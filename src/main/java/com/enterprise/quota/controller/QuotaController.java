@@ -4,6 +4,7 @@ import com.enterprise.quota.entity.EnterpriseQuota;
 import com.enterprise.quota.entity.ProjectItem;
 import com.enterprise.quota.entity.ProjectItemQuota;
 import com.enterprise.quota.repository.EnterpriseQuotaRepository;
+import com.enterprise.quota.repository.ProjectItemQuotaRepository;
 import com.enterprise.quota.repository.ProjectItemRepository;
 import com.enterprise.quota.service.ExcelExportService;
 import com.enterprise.quota.service.ExcelImportService;
@@ -13,6 +14,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -31,6 +33,9 @@ public class QuotaController {
     
     @Autowired
     private ProjectItemRepository itemRepository;
+    
+    @Autowired
+    private ProjectItemQuotaRepository itemQuotaRepository;
     
     @Autowired
     private ExcelImportService importService;
@@ -96,6 +101,140 @@ public class QuotaController {
         return ResponseEntity.ok(itemRepository.findAll());
     }
     
+    /**
+     * 新增项目清单（基础信息）
+     */
+    @PostMapping("/items")
+    public ResponseEntity<Map<String, Object>> createItem(@RequestBody ProjectItem request) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            ProjectItem item = new ProjectItem();
+            item.setItemCode(request.getItemCode());
+            item.setItemName(request.getItemName());
+            item.setFeatureValue(request.getFeatureValue());
+            item.setUnit(request.getUnit());
+            item.setQuantity(request.getQuantity());
+            
+            // 新增清单默认未匹配
+            item.setMatchStatus(0);
+            item.setMatchedQuotaId(null);
+            item.setMatchedQuotaCode(null);
+            item.setMatchedQuotaName(null);
+            item.setMatchedQuotaFeatureValue(null);
+            item.setMatchedUnitPrice(null);
+            item.setTotalPrice(null);
+            
+            ProjectItem saved = itemRepository.save(item);
+            result.put("success", true);
+            result.put("message", "新增清单成功");
+            result.put("item", saved);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "新增清单失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 更新项目清单（基础信息）
+     */
+    @PutMapping("/items/{itemId}")
+    public ResponseEntity<Map<String, Object>> updateItem(
+            @PathVariable Long itemId, @RequestBody Map<String, Object> updates) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            ProjectItem item = itemRepository.findById(itemId)
+                    .orElseThrow(() -> new RuntimeException("项目清单不存在"));
+            
+            // 只更新传入的字段（支持部分更新）
+            if (updates.containsKey("itemCode")) {
+                item.setItemCode((String) updates.get("itemCode"));
+            }
+            if (updates.containsKey("itemName")) {
+                String itemName = (String) updates.get("itemName");
+                if (itemName == null || itemName.trim().isEmpty()) {
+                    result.put("success", false);
+                    result.put("message", "清单名称不能为空");
+                    return ResponseEntity.badRequest().body(result);
+                }
+                item.setItemName(itemName);
+            }
+            if (updates.containsKey("featureValue")) {
+                item.setFeatureValue((String) updates.get("featureValue"));
+            }
+            if (updates.containsKey("unit")) {
+                item.setUnit((String) updates.get("unit"));
+            }
+            if (updates.containsKey("quantity")) {
+                Object qtyObj = updates.get("quantity");
+                if (qtyObj != null) {
+                    BigDecimal quantity;
+                    if (qtyObj instanceof Number) {
+                        quantity = BigDecimal.valueOf(((Number) qtyObj).doubleValue());
+                    } else {
+                        quantity = new BigDecimal(qtyObj.toString());
+                    }
+                    item.setQuantity(quantity);
+                }
+            }
+            if (updates.containsKey("remark")) {
+                item.setRemark((String) updates.get("remark"));
+            }
+            
+            // 如果已经有匹配单价，则根据数量重新计算合价
+            if (item.getMatchedUnitPrice() != null && item.getQuantity() != null) {
+                item.setTotalPrice(item.getQuantity().multiply(item.getMatchedUnitPrice()));
+            }
+            
+            ProjectItem saved = itemRepository.save(item);
+            result.put("success", true);
+            result.put("message", "更新清单成功");
+            result.put("item", saved);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "更新清单失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 删除项目清单
+     */
+    @DeleteMapping("/items/{itemId}")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> deleteItem(@PathVariable Long itemId) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (!itemRepository.existsById(itemId)) {
+                result.put("success", false);
+                result.put("message", "项目清单不存在");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            // 先删除关联的定额关系
+            try {
+                itemQuotaRepository.deleteByProjectItemId(itemId);
+            } catch (Exception e) {
+                // 如果删除关联关系失败，记录日志但继续删除清单
+                System.err.println("删除清单关联关系失败: " + e.getMessage());
+            }
+            
+            // 再删除清单本身
+            itemRepository.deleteById(itemId);
+            
+            result.put("success", true);
+            result.put("message", "删除成功");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            e.printStackTrace();
+            result.put("success", false);
+            result.put("message", "删除失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
     @GetMapping("/quotas")
     public ResponseEntity<List<EnterpriseQuota>> getAllQuotas() {
         return ResponseEntity.ok(quotaRepository.findAll());
@@ -155,10 +294,11 @@ public class QuotaController {
     public ResponseEntity<Map<String, Object>> clearAll() {
         Map<String, Object> result = new HashMap<>();
         try {
+            // 仅清理项目清单及其匹配关系，不删除企业定额数据
+            itemQuotaRepository.deleteAll();
             itemRepository.deleteAll();
-            quotaRepository.deleteAll();
             result.put("success", true);
-            result.put("message", "清空成功");
+            result.put("message", "已清理所有项目清单数据（企业定额数据已保留）");
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             result.put("success", false);
@@ -228,6 +368,128 @@ public class QuotaController {
             result.put("success", false);
             result.put("message", "清空失败：" + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    // ==================== 定额管理模块接口 ====================
+    
+    /**
+     * 创建企业定额
+     */
+    @PostMapping("/quotas")
+    public ResponseEntity<Map<String, Object>> createQuota(@RequestBody EnterpriseQuota quota) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            EnterpriseQuota saved = quotaRepository.save(quota);
+            result.put("success", true);
+            result.put("message", "创建成功");
+            result.put("quota", saved);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "创建失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 更新企业定额
+     */
+    @PutMapping("/quotas/{quotaId}")
+    public ResponseEntity<Map<String, Object>> updateQuota(
+            @PathVariable Long quotaId, @RequestBody EnterpriseQuota quota) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            EnterpriseQuota existing = quotaRepository.findById(quotaId)
+                    .orElseThrow(() -> new RuntimeException("企业定额不存在"));
+            
+            existing.setQuotaCode(quota.getQuotaCode());
+            existing.setQuotaName(quota.getQuotaName());
+            existing.setFeatureValue(quota.getFeatureValue());
+            existing.setUnit(quota.getUnit());
+            existing.setUnitPrice(quota.getUnitPrice());
+            existing.setLaborCost(quota.getLaborCost());
+            existing.setMaterialCost(quota.getMaterialCost());
+            existing.setMachineCost(quota.getMachineCost());
+            existing.setRemark(quota.getRemark());
+            
+            EnterpriseQuota saved = quotaRepository.save(existing);
+            result.put("success", true);
+            result.put("message", "更新成功");
+            result.put("quota", saved);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "更新失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 删除企业定额
+     */
+    @DeleteMapping("/quotas/{quotaId}")
+    public ResponseEntity<Map<String, Object>> deleteQuota(@PathVariable Long quotaId) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (!quotaRepository.existsById(quotaId)) {
+                result.put("success", false);
+                result.put("message", "企业定额不存在");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            quotaRepository.deleteById(quotaId);
+            result.put("success", true);
+            result.put("message", "删除成功");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "删除失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 批量删除企业定额
+     */
+    @DeleteMapping("/quotas/batch")
+    public ResponseEntity<Map<String, Object>> deleteQuotas(@RequestBody List<Long> quotaIds) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            quotaRepository.deleteAllById(quotaIds);
+            result.put("success", true);
+            result.put("message", "批量删除成功，共删除 " + quotaIds.size() + " 条记录");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "批量删除失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 获取单个企业定额
+     */
+    @GetMapping("/quotas/{quotaId}")
+    public ResponseEntity<EnterpriseQuota> getQuota(@PathVariable Long quotaId) {
+        return quotaRepository.findById(quotaId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+    
+    /**
+     * 导出企业定额数据
+     */
+    @GetMapping("/quotas/export")
+    public ResponseEntity<byte[]> exportQuotas() {
+        try {
+            byte[] excelData = exportService.exportQuotas();
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+            headers.setContentDispositionFormData("attachment", "企业定额数据.xlsx");
+            return ResponseEntity.ok().headers(headers).body(excelData);
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 }

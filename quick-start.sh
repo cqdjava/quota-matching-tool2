@@ -94,3 +94,4 @@ echo ""
 # 启动应用
 java $JVM_OPTS -jar "$JAR_FILE" $SPRING_OPTS
 
+

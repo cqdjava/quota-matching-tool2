@@ -1,7 +1,9 @@
 package com.enterprise.quota.service;
 
+import com.enterprise.quota.entity.EnterpriseQuota;
 import com.enterprise.quota.entity.ProjectItem;
 import com.enterprise.quota.entity.ProjectItemQuota;
+import com.enterprise.quota.repository.EnterpriseQuotaRepository;
 import com.enterprise.quota.repository.ProjectItemRepository;
 import com.enterprise.quota.repository.ProjectItemQuotaRepository;
 import org.apache.poi.ss.usermodel.*;
@@ -21,6 +23,9 @@ public class ExcelExportService {
     
     @Autowired
     private ProjectItemQuotaRepository itemQuotaRepository;
+    
+    @Autowired
+    private EnterpriseQuotaRepository quotaRepository;
     
     public byte[] exportMatchedItems() throws IOException {
         List<ProjectItem> items = itemRepository.findAll();
@@ -125,6 +130,64 @@ public class ExcelExportService {
                 } else {
                     row.createCell(13).setCellValue("");
                 }
+            }
+            
+            for (int i = 0; i < headers.length; i++) {
+                sheet.autoSizeColumn(i);
+                if (sheet.getColumnWidth(i) < 3000) {
+                    sheet.setColumnWidth(i, 3000);
+                }
+            }
+            
+            workbook.write(out);
+            return out.toByteArray();
+        }
+    }
+    
+    public byte[] exportQuotas() throws IOException {
+        List<EnterpriseQuota> quotas = quotaRepository.findAll();
+        
+        try (Workbook workbook = new XSSFWorkbook();
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            
+            Sheet sheet = workbook.createSheet("企业定额数据");
+            
+            CellStyle headerStyle = workbook.createCellStyle();
+            Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+            headerFont.setFontHeightInPoints((short) 12);
+            headerStyle.setFont(headerFont);
+            headerStyle.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
+            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            headerStyle.setAlignment(HorizontalAlignment.CENTER);
+            
+            Row headerRow = sheet.createRow(0);
+            String[] headers = {
+                "序号", "定额编码", "定额名称", "项目特征值", "单位", 
+                "单价", "人工费", "材料费", "机械费", "备注"
+            };
+            
+            for (int i = 0; i < headers.length; i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(headers[i]);
+                cell.setCellStyle(headerStyle);
+            }
+            
+            int rowNum = 1;
+            int sequenceNum = 1;
+            for (EnterpriseQuota quota : quotas) {
+                Row row = sheet.createRow(rowNum++);
+                
+                row.createCell(0).setCellValue(sequenceNum++);
+                row.createCell(1).setCellValue(quota.getQuotaCode() != null ? quota.getQuotaCode() : "");
+                row.createCell(2).setCellValue(quota.getQuotaName() != null ? quota.getQuotaName() : "");
+                row.createCell(3).setCellValue(quota.getFeatureValue() != null ? quota.getFeatureValue() : "");
+                row.createCell(4).setCellValue(quota.getUnit() != null ? quota.getUnit() : "");
+                row.createCell(5).setCellValue(quota.getUnitPrice() != null ? quota.getUnitPrice().doubleValue() : 0);
+                row.createCell(6).setCellValue(quota.getLaborCost() != null ? quota.getLaborCost().doubleValue() : 0);
+                row.createCell(7).setCellValue(quota.getMaterialCost() != null ? quota.getMaterialCost().doubleValue() : 0);
+                row.createCell(8).setCellValue(quota.getMachineCost() != null ? quota.getMachineCost().doubleValue() : 0);
+                row.createCell(9).setCellValue(quota.getRemark() != null ? quota.getRemark() : "");
             }
             
             for (int i = 0; i < headers.length; i++) {

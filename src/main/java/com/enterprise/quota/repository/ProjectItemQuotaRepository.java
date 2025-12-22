@@ -20,7 +20,7 @@ public interface ProjectItemQuotaRepository extends JpaRepository<ProjectItemQuo
      * 删除清单项的所有定额关联
      */
     @Modifying
-    @Query("DELETE FROM ProjectItemQuota p WHERE p.projectItemId = ?1")
+    @Query(value = "DELETE FROM project_item_quota WHERE project_item_id = ?1", nativeQuery = true)
     void deleteByProjectItemId(Long projectItemId);
     
     /**
