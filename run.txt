@@ -1,0 +1,97 @@
+@echo off
+REM 企业定额自动套用工具 - Windows运行脚本
+REM 使用方法: run.bat [dev|prod]
+
+setlocal enabledelayedexpansion
+
+set APP_DIR=%~dp0
+set JAR_FILE=%APP_DIR%target\quota-matching-tool-1.0.0.jar
+set PROFILE=%1
+
+if "%PROFILE%"=="" set PROFILE=dev
+
+REM 检查JAR文件是否存在
+if not exist "%JAR_FILE%" (
+    echo ========================================
+    echo 错误: JAR文件不存在
+    echo ========================================
+    echo 文件路径: %JAR_FILE%
+    echo.
+    echo 请先执行以下命令打包应用：
+    echo   mvn clean package -DskipTests
+    echo.
+    pause
+    exit /b 1
+)
+
+REM 检查Java环境
+where java >nul 2>&1
+if %errorlevel% neq 0 (
+    echo ========================================
+    echo 错误: 未找到Java环境
+    echo ========================================
+    echo 请先安装JDK 1.8或更高版本
+    echo 并配置JAVA_HOME环境变量
+    echo.
+    pause
+    exit /b 1
+)
+
+REM 显示Java版本
+echo 检查Java环境...
+java -version
+echo.
+
+echo ========================================
+echo 企业定额自动套用工具
+echo ========================================
+echo 运行模式: %PROFILE%
+echo JAR文件: %JAR_FILE%
+echo ========================================
+echo.
+
+REM JVM参数
+set JVM_OPTS=-Xms512m -Xmx1024m
+set JVM_OPTS=%JVM_OPTS% -XX:+UseG1GC
+set JVM_OPTS=%JVM_OPTS% -Djava.awt.headless=true
+set JVM_OPTS=%JVM_OPTS% -Dfile.encoding=UTF-8
+set JVM_OPTS=%JVM_OPTS% -Duser.timezone=Asia/Shanghai
+
+REM Spring Boot参数
+set SPRING_OPTS=--spring.profiles.active=%PROFILE%
+
+REM 启动应用
+echo 正在启动应用...
+echo.
+echo 提示: 如果使用生产环境，请确保：
+echo   1. MySQL数据库已启动
+echo   2. 数据库 quota_db 已创建
+echo   3. 数据库用户名和密码已正确配置
+echo   4. 如果配置了环境变量，请先设置 DB_USERNAME 和 DB_PASSWORD
+echo.
+echo 按 Ctrl+C 可以停止应用
+echo.
+echo ========================================
+echo.
+
+java %JVM_OPTS% -jar "%JAR_FILE%" %SPRING_OPTS%
+
+REM 如果应用退出，检查退出码
+if %errorlevel% neq 0 (
+    echo.
+    echo ========================================
+    echo 应用已退出（退出码: %errorlevel%）
+    echo ========================================
+    echo.
+    echo 可能的原因：
+    echo   1. 数据库连接失败（检查MySQL服务和数据库配置）
+    echo   2. 端口8080被占用
+    echo   3. 配置文件错误
+    echo   4. 内存不足
+    echo.
+    echo 请查看上方的错误信息以获取更多详情
+    echo.
+    pause
+    exit /b 1
+)
+

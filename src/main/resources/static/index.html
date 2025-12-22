@@ -52,6 +52,7 @@
                 <table id="itemsTable">
                     <thead>
                         <tr>
+                            <th>序号</th>
                             <th>清单编码</th>
                             <th>清单名称</th>
                             <th>项目特征值</th>
@@ -68,7 +69,7 @@
                     </thead>
                     <tbody id="itemsTableBody">
                         <tr>
-                            <td colspan="12" class="empty-message">暂无数据，请先导入项目清单</td>
+                            <td colspan="13" class="empty-message">暂无数据，请先导入项目清单</td>
                         </tr>
                     </tbody>
                 </table>
@@ -77,7 +78,7 @@
     </div>
 
     <div id="editModal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content" style="max-width: 800px;">
             <span class="close" onclick="closeEditModal()">&times;</span>
             <h2>编辑匹配定额</h2>
             <div class="modal-body">
@@ -85,6 +86,12 @@
                     <label>当前清单：</label>
                     <span id="currentItemName"></span>
                 </div>
+                
+                <div class="form-group">
+                    <label>已添加的定额：</label>
+                    <div id="addedQuotasList" class="added-quotas-list"></div>
+                </div>
+                
                 <div class="form-group">
                     <label>搜索企业定额：</label>
                     <input type="text" id="quotaSearchInput" placeholder="输入定额名称或特征值搜索..." onkeyup="searchQuotas()">
@@ -93,10 +100,15 @@
                 <div class="quota-list" id="quotaList">
                     <p>请输入关键词搜索企业定额</p>
                 </div>
+                
                 <div class="form-group">
-                    <label>或直接输入单价：</label>
+                    <label>或直接输入单价（单定额模式）：</label>
                     <input type="number" id="manualPrice" step="0.01" placeholder="输入单价">
                     <button onclick="updatePrice()">更新单价</button>
+                </div>
+                
+                <div class="form-group">
+                    <button onclick="clearAllQuotas()" class="btn-danger" style="margin-top: 10px;">清空所有定额</button>
                 </div>
             </div>
         </div>

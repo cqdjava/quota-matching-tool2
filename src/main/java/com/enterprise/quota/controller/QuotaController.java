@@ -2,6 +2,7 @@ package com.enterprise.quota.controller;
 
 import com.enterprise.quota.entity.EnterpriseQuota;
 import com.enterprise.quota.entity.ProjectItem;
+import com.enterprise.quota.entity.ProjectItemQuota;
 import com.enterprise.quota.repository.EnterpriseQuotaRepository;
 import com.enterprise.quota.repository.ProjectItemRepository;
 import com.enterprise.quota.service.ExcelExportService;
@@ -156,6 +157,70 @@ public class QuotaController {
         try {
             itemRepository.deleteAll();
             quotaRepository.deleteAll();
+            result.put("success", true);
+            result.put("message", "清空成功");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "清空失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 添加定额到清单项（支持多定额）
+     */
+    @PostMapping("/items/{itemId}/quotas/{quotaId}")
+    public ResponseEntity<Map<String, Object>> addQuotaToItem(
+            @PathVariable Long itemId, @PathVariable Long quotaId) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            matchingService.addQuotaToItem(itemId, quotaId);
+            result.put("success", true);
+            result.put("message", "添加成功");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "添加失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 获取清单项的所有定额
+     */
+    @GetMapping("/items/{itemId}/quotas")
+    public ResponseEntity<List<ProjectItemQuota>> getItemQuotas(@PathVariable Long itemId) {
+        return ResponseEntity.ok(matchingService.getItemQuotas(itemId));
+    }
+    
+    /**
+     * 从清单项中移除定额
+     */
+    @DeleteMapping("/items/{itemId}/quotas/{itemQuotaId}")
+    public ResponseEntity<Map<String, Object>> removeQuotaFromItem(
+            @PathVariable Long itemId, @PathVariable Long itemQuotaId) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            matchingService.removeQuotaFromItem(itemId, itemQuotaId);
+            result.put("success", true);
+            result.put("message", "移除成功");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "移除失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 清空清单项的所有定额关联
+     */
+    @DeleteMapping("/items/{itemId}/quotas")
+    public ResponseEntity<Map<String, Object>> clearItemQuotas(@PathVariable Long itemId) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            matchingService.clearItemQuotas(itemId);
             result.put("success", true);
             result.put("message", "清空成功");
             return ResponseEntity.ok(result);

@@ -1,5 +1,6 @@
 const API_BASE = '/api/quota';
 let currentEditItemId = null;
+let currentItemQuotas = [];
 
 window.onload = function() {
     loadItems();
@@ -113,7 +114,22 @@ async function loadItems() {
     try {
         const response = await fetch(API_BASE + '/items');
         const items = await response.json();
-        renderItemsTable(items);
+        
+        // 对于多定额匹配的项目，加载其关联的定额列表
+        const itemsWithQuotas = await Promise.all(items.map(async (item) => {
+            if (item.matchStatus === 3) {
+                try {
+                    const quotasResponse = await fetch(API_BASE + `/items/${item.id}/quotas`);
+                    item.quotas = await quotasResponse.json();
+                } catch (error) {
+                    console.error(`加载项目 ${item.id} 的定额列表失败：`, error);
+                    item.quotas = [];
+                }
+            }
+            return item;
+        }));
+        
+        renderItemsTable(itemsWithQuotas);
     } catch (error) {
         console.error('加载数据失败：', error);
     }
@@ -123,26 +139,45 @@ function renderItemsTable(items) {
     const tbody = document.getElementById('itemsTableBody');
     
     if (items.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="12" class="empty-message">暂无数据，请先导入项目清单</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="13" class="empty-message">暂无数据，请先导入项目清单</td></tr>';
         return;
     }
     
-    tbody.innerHTML = items.map(item => {
+    tbody.innerHTML = items.map((item, index) => {
         const statusClass = item.matchStatus === 1 ? 'status-matched' : 
-                           item.matchStatus === 2 ? 'status-manual' : 'status-unmatched';
+                           item.matchStatus === 2 ? 'status-manual' : 
+                           item.matchStatus === 3 ? 'status-multi' : 'status-unmatched';
         const statusText = item.matchStatus === 1 ? '已匹配' : 
-                          item.matchStatus === 2 ? '手动修改' : '未匹配';
+                          item.matchStatus === 2 ? '手动修改' : 
+                          item.matchStatus === 3 ? '多定额匹配' : '未匹配';
+        
+        // 如果是多定额匹配，显示所有定额的详细信息
+        let quotaDisplay = '';
+        let quotaNameDisplay = '';
+        let quotaFeatureDisplay = '';
+        
+        if (item.matchStatus === 3 && item.quotas && item.quotas.length > 0) {
+            // 分别显示每个定额的编码、名称、特征值
+            quotaDisplay = item.quotas.map(q => q.quotaCode || '无').join('<br>');
+            quotaNameDisplay = item.quotas.map(q => q.quotaName || '无').join('<br>');
+            quotaFeatureDisplay = item.quotas.map(q => q.quotaFeatureValue || '无').join('<br>');
+        } else {
+            quotaDisplay = item.matchedQuotaCode || '';
+            quotaNameDisplay = item.matchedQuotaName || '';
+            quotaFeatureDisplay = item.matchedQuotaFeatureValue || '';
+        }
         
         return `
             <tr>
+                <td style="text-align: center; font-weight: bold;">${index + 1}</td>
                 <td>${item.itemCode || ''}</td>
                 <td>${item.itemName || ''}</td>
                 <td>${item.featureValue || ''}</td>
                 <td>${item.unit || ''}</td>
                 <td>${item.quantity || 0}</td>
-                <td>${item.matchedQuotaCode || ''}</td>
-                <td>${item.matchedQuotaName || ''}</td>
-                <td>${item.matchedQuotaFeatureValue || ''}</td>
+                <td style="vertical-align: top;">${quotaDisplay}</td>
+                <td style="vertical-align: top;">${quotaNameDisplay}</td>
+                <td style="vertical-align: top;">${quotaFeatureDisplay}</td>
                 <td>${item.matchedUnitPrice || 0}</td>
                 <td>${item.totalPrice || 0}</td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
@@ -167,18 +202,22 @@ function filterItems() {
     });
 }
 
-function openEditModal(itemId, itemName) {
+async function openEditModal(itemId, itemName) {
     currentEditItemId = itemId;
     document.getElementById('currentItemName').textContent = itemName;
     document.getElementById('editModal').style.display = 'block';
     document.getElementById('quotaList').innerHTML = '<p>请输入关键词搜索企业定额</p>';
     document.getElementById('quotaSearchInput').value = '';
     document.getElementById('manualPrice').value = '';
+    
+    // 加载已添加的定额
+    await loadItemQuotas(itemId);
 }
 
 function closeEditModal() {
     document.getElementById('editModal').style.display = 'none';
     currentEditItemId = null;
+    currentItemQuotas = [];
 }
 
 async function searchQuotas() {
@@ -201,13 +240,17 @@ async function searchQuotas() {
             return;
         }
         
-        quotaList.innerHTML = quotas.map(quota => `
-            <div class="quota-item" onclick="selectQuota(${quota.id})">
+        quotaList.innerHTML = quotas.map(quota => {
+            const isAdded = currentItemQuotas.some(q => q.quotaId === quota.id);
+            return `
+            <div class="quota-item" onclick="selectQuota(${quota.id})" style="position: relative; ${isAdded ? 'opacity: 0.6; background: #e0e0e0;' : ''}">
+                ${isAdded ? '<span style="position: absolute; top: 5px; right: 5px; background: #4CAF50; color: white; padding: 2px 8px; border-radius: 3px; font-size: 12px;">已添加</span>' : ''}
                 <h4>${quota.quotaCode} - ${quota.quotaName}</h4>
                 <p>特征值：${quota.featureValue || '无'}</p>
                 <p>单价：${quota.unitPrice || 0} 元/${quota.unit || ''}</p>
             </div>
-        `).join('');
+        `;
+        }).join('');
     } catch (error) {
         quotaList.innerHTML = '<p>搜索失败：' + error.message + '</p>';
     }
@@ -216,23 +259,139 @@ async function searchQuotas() {
 async function selectQuota(quotaId) {
     if (!currentEditItemId) return;
     
+    // 检查是否已添加
+    const exists = currentItemQuotas.some(q => q.quotaId === quotaId);
+    if (exists) {
+        alert('该定额已添加！');
+        return;
+    }
+    
     try {
         const response = await fetch(
-            API_BASE + `/items/${currentEditItemId}/match?quotaId=${quotaId}`,
-            { method: 'PUT' }
+            API_BASE + `/items/${currentEditItemId}/quotas/${quotaId}`,
+            { method: 'POST' }
         );
         
         const result = await response.json();
         
         if (result.success) {
-            alert('更新成功！');
-            closeEditModal();
+            // 重新加载已添加的定额列表
+            await loadItemQuotas(currentEditItemId);
             loadItems();
         } else {
-            alert('更新失败：' + result.message);
+            alert('添加失败：' + result.message);
         }
     } catch (error) {
-        alert('更新失败：' + error.message);
+        alert('添加失败：' + error.message);
+    }
+}
+
+async function loadItemQuotas(itemId) {
+    try {
+        const response = await fetch(API_BASE + `/items/${itemId}/quotas`);
+        currentItemQuotas = await response.json();
+        renderAddedQuotas();
+    } catch (error) {
+        console.error('加载定额列表失败：', error);
+        currentItemQuotas = [];
+        renderAddedQuotas();
+    }
+}
+
+function renderAddedQuotas() {
+    const container = document.getElementById('addedQuotasList');
+    
+    if (currentItemQuotas.length === 0) {
+        container.innerHTML = '<p style="color: #999;">暂无已添加的定额</p>';
+        return;
+    }
+    
+    // 计算总价
+    const totalPrice = currentItemQuotas.reduce((sum, q) => {
+        return sum + (q.unitPrice ? parseFloat(q.unitPrice) : 0);
+    }, 0);
+    
+    container.innerHTML = currentItemQuotas.map((quota, index) => `
+        <div class="added-quota-item" style="border: 1px solid #ddd; padding: 10px; margin: 5px 0; border-radius: 4px; background: #f9f9f9;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div style="flex: 1;">
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #667eea;">${index + 1}. 匹配定额编码：</strong>
+                        <span>${quota.quotaCode || '无'}</span>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #667eea;">匹配定额名称：</strong>
+                        <span>${quota.quotaName || '无'}</span>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong style="color: #667eea;">定额项目特征：</strong>
+                        <span>${quota.quotaFeatureValue || '无'}</span>
+                    </div>
+                    <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid #e0e0e0;">
+                        <strong style="color: #2196F3;">单价：${quota.unitPrice || 0} 元</strong>
+                    </div>
+                </div>
+                <button onclick="removeQuota(${quota.id})" style="background: #f44336; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; margin-left: 10px; align-self: flex-start;">
+                    移除
+                </button>
+            </div>
+        </div>
+    `).join('') + `
+        <div style="margin-top: 10px; padding: 10px; background: #e3f2fd; border-radius: 4px;">
+            <strong>合计单价：${totalPrice.toFixed(2)} 元</strong>
+        </div>
+    `;
+}
+
+async function removeQuota(itemQuotaId) {
+    if (!currentEditItemId) return;
+    
+    if (!confirm('确定要移除这个定额吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(
+            API_BASE + `/items/${currentEditItemId}/quotas/${itemQuotaId}`,
+            { method: 'DELETE' }
+        );
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            await loadItemQuotas(currentEditItemId);
+            loadItems();
+        } else {
+            alert('移除失败：' + result.message);
+        }
+    } catch (error) {
+        alert('移除失败：' + error.message);
+    }
+}
+
+async function clearAllQuotas() {
+    if (!currentEditItemId) return;
+    
+    if (!confirm('确定要清空所有已添加的定额吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(
+            API_BASE + `/items/${currentEditItemId}/quotas`,
+            { method: 'DELETE' }
+        );
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            await loadItemQuotas(currentEditItemId);
+            loadItems();
+        } else {
+            alert('清空失败：' + result.message);
+        }
+    } catch (error) {
+        alert('清空失败：' + error.message);
     }
 }
 

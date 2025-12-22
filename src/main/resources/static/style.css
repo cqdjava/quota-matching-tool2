@@ -199,6 +199,21 @@ tbody tr:hover {
     color: #856404;
 }
 
+.status-multi {
+    background: #cfe2ff;
+    color: #084298;
+}
+
+.added-quotas-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-top: 10px;
+}
+
+.added-quota-item {
+    margin-bottom: 10px;
+}
+
 .action-btn {
     padding: 5px 10px;
     background: #667eea;
