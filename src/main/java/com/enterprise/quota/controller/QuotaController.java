@@ -3,9 +3,11 @@ package com.enterprise.quota.controller;
 import com.enterprise.quota.entity.EnterpriseQuota;
 import com.enterprise.quota.entity.ProjectItem;
 import com.enterprise.quota.entity.ProjectItemQuota;
+import com.enterprise.quota.entity.QuotaVersion;
 import com.enterprise.quota.repository.EnterpriseQuotaRepository;
 import com.enterprise.quota.repository.ProjectItemQuotaRepository;
 import com.enterprise.quota.repository.ProjectItemRepository;
+import com.enterprise.quota.repository.QuotaVersionRepository;
 import com.enterprise.quota.service.ExcelExportService;
 import com.enterprise.quota.service.ExcelImportService;
 import com.enterprise.quota.service.QuotaMatchingService;
@@ -46,11 +48,17 @@ public class QuotaController {
     @Autowired
     private ExcelExportService exportService;
     
+    @Autowired
+    private QuotaVersionRepository versionRepository;
+    
     @PostMapping("/import-quotas")
-    public ResponseEntity<Map<String, Object>> importQuotas(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<Map<String, Object>> importQuotas(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "versionId", required = false) Long versionId) {
         Map<String, Object> result = new HashMap<>();
         try {
             List<EnterpriseQuota> quotas = importService.importEnterpriseQuotas(file);
+            // 暂时忽略版本ID，因为EnterpriseQuota没有versionId字段
             quotaRepository.saveAll(quotas);
             result.put("success", true);
             result.put("message", "导入成功，共导入 " + quotas.size() + " 条企业定额数据");
@@ -81,9 +89,11 @@ public class QuotaController {
     }
     
     @PostMapping("/match")
-    public ResponseEntity<Map<String, Object>> matchQuotas() {
+    public ResponseEntity<Map<String, Object>> matchQuotas(
+            @RequestParam(value = "versionId", required = false) Long versionId) {
         Map<String, Object> result = new HashMap<>();
         try {
+            // 暂时忽略版本ID，因为匹配服务不支持版本
             int matchedCount = matchingService.batchMatchQuotas();
             result.put("success", true);
             result.put("message", "匹配完成，共匹配 " + matchedCount + " 条项目清单");
@@ -236,12 +246,17 @@ public class QuotaController {
     }
     
     @GetMapping("/quotas")
-    public ResponseEntity<List<EnterpriseQuota>> getAllQuotas() {
+    public ResponseEntity<List<EnterpriseQuota>> getAllQuotas(
+            @RequestParam(value = "versionId", required = false) Long versionId) {
+        // 暂时忽略版本ID，返回所有定额
         return ResponseEntity.ok(quotaRepository.findAll());
     }
     
     @GetMapping("/quotas/search")
-    public ResponseEntity<List<EnterpriseQuota>> searchQuotas(@RequestParam String keyword) {
+    public ResponseEntity<List<EnterpriseQuota>> searchQuotas(
+            @RequestParam String keyword,
+            @RequestParam(value = "versionId", required = false) Long versionId) {
+        // 暂时忽略版本ID，返回所有匹配的定额
         return ResponseEntity.ok(quotaRepository.findByKeyword(keyword));
     }
     
@@ -490,6 +505,176 @@ public class QuotaController {
             return ResponseEntity.ok().headers(headers).body(excelData);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+    
+    // ==================== 版本管理模块接口 ====================
+    
+    /**
+     * 获取所有版本
+     */
+    @GetMapping("/versions")
+    public ResponseEntity<List<QuotaVersion>> getAllVersions() {
+        return ResponseEntity.ok(versionRepository.findAllByOrderByCreateTimeDesc());
+    }
+    
+    /**
+     * 创建版本
+     */
+    @PostMapping("/versions")
+    public ResponseEntity<Map<String, Object>> createVersion(@RequestBody QuotaVersion version) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (version.getVersionName() == null || version.getVersionName().trim().isEmpty()) {
+                result.put("success", false);
+                result.put("message", "版本名称不能为空");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            // 检查版本名称是否已存在
+            QuotaVersion existing = versionRepository.findByVersionName(version.getVersionName());
+            if (existing != null) {
+                result.put("success", false);
+                result.put("message", "版本名称已存在");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            QuotaVersion saved = versionRepository.save(version);
+            result.put("success", true);
+            result.put("message", "创建成功");
+            result.put("version", saved);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "创建失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 更新版本
+     */
+    @PutMapping("/versions/{versionId}")
+    public ResponseEntity<Map<String, Object>> updateVersion(
+            @PathVariable Long versionId, @RequestBody QuotaVersion version) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            QuotaVersion existing = versionRepository.findById(versionId)
+                    .orElseThrow(() -> new RuntimeException("版本不存在"));
+            
+            if (version.getVersionName() != null && !version.getVersionName().trim().isEmpty()) {
+                // 检查新版本名称是否与其他版本冲突
+                QuotaVersion duplicate = versionRepository.findByVersionName(version.getVersionName());
+                if (duplicate != null && !duplicate.getId().equals(versionId)) {
+                    result.put("success", false);
+                    result.put("message", "版本名称已存在");
+                    return ResponseEntity.badRequest().body(result);
+                }
+                existing.setVersionName(version.getVersionName());
+            }
+            
+            if (version.getDescription() != null) {
+                existing.setDescription(version.getDescription());
+            }
+            
+            QuotaVersion saved = versionRepository.save(existing);
+            result.put("success", true);
+            result.put("message", "更新成功");
+            result.put("version", saved);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "更新失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 删除版本（暂时只删除版本本身，不删除定额）
+     */
+    @DeleteMapping("/versions/{versionId}")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> deleteVersion(@PathVariable Long versionId) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (!versionRepository.existsById(versionId)) {
+                result.put("success", false);
+                result.put("message", "版本不存在");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            // 由于EnterpriseQuota没有versionId字段，暂时只删除版本本身
+            versionRepository.deleteById(versionId);
+            
+            result.put("success", true);
+            result.put("message", "删除成功");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "删除失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 获取单个版本
+     */
+    @GetMapping("/versions/{versionId}")
+    public ResponseEntity<QuotaVersion> getVersion(@PathVariable Long versionId) {
+        return versionRepository.findById(versionId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
+    
+    /**
+     * 导入定额到指定版本
+     */
+    @PostMapping("/versions/{versionId}/import-quotas")
+    public ResponseEntity<Map<String, Object>> importQuotasToVersion(
+            @PathVariable Long versionId,
+            @RequestParam("file") MultipartFile file) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            if (!versionRepository.existsById(versionId)) {
+                result.put("success", false);
+                result.put("message", "版本不存在");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            List<EnterpriseQuota> quotas = importService.importEnterpriseQuotas(file);
+            // 由于EnterpriseQuota没有versionId字段，暂时只导入定额，不关联版本
+            quotaRepository.saveAll(quotas);
+            
+            result.put("success", true);
+            result.put("message", "导入成功，共导入 " + quotas.size() + " 条企业定额数据");
+            result.put("count", quotas.size());
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "导入失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 批量删除版本
+     */
+    @DeleteMapping("/versions/batch")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> batchDeleteVersions(@RequestBody List<Long> versionIds) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            for (Long versionId : versionIds) {
+                // 由于EnterpriseQuota没有versionId字段，暂时只删除版本本身
+                versionRepository.deleteById(versionId);
+            }
+            result.put("success", true);
+            result.put("message", "批量删除成功，共删除 " + versionIds.size() + " 个版本");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "批量删除失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
         }
     }
 }

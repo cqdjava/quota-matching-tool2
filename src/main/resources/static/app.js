@@ -3,16 +3,33 @@ let currentEditItemId = null;
 let currentItemQuotas = [];
 let currentBasicEditItemId = null;
 let selectedItemIds = new Set();
+let selectedQuotaIds = new Set();
+let selectedVersionIds = new Set();
+let currentVersionId = null; // 当前选中的版本ID
+let currentViewingVersionId = null; // 当前查看的版本明细ID
 
 window.onload = function() {
+    try {
     loadItems();
-    // 确保表格容器可以正常滚动
-    ensureTableScrolling();
+        loadVersions();
+        loadVersionOptions();
+        // 确保表格容器可以正常滚动
+        ensureTableScrolling();
+        
+        // 调试信息
+        console.log('页面加载完成，函数检查：');
+        console.log('switchNav:', typeof switchNav);
+        console.log('loadVersions:', typeof loadVersions);
+        console.log('openVersionEditModal:', typeof openVersionEditModal);
+    } catch (error) {
+        console.error('页面加载错误：', error);
+        alert('页面加载出错：' + error.message);
+    }
 };
 
 // 确保表格容器可以正常滚动
 function ensureTableScrolling() {
-    const containers = ['itemsTableContainer', 'quotasTableContainer'];
+    const containers = ['itemsTableContainer', 'quotasTableContainer', 'versionsTableContainer'];
     
     containers.forEach(containerId => {
         const container = document.getElementById(containerId);
@@ -116,12 +133,18 @@ async function importItems() {
 
 async function matchQuotas() {
     const statusSpan = document.getElementById('matchStatus');
+    const versionSelect = document.getElementById('versionSelect');
+    const versionId = versionSelect.value || null;
     
     statusSpan.textContent = '匹配中...';
     statusSpan.className = 'status-message';
     
     try {
-        const response = await fetch(API_BASE + '/match', {
+        let url = API_BASE + '/match';
+        if (versionId) {
+            url += '?versionId=' + versionId;
+        }
+        const response = await fetch(url, {
             method: 'POST'
         });
         
@@ -637,8 +660,12 @@ async function saveItem() {
 }
 
 async function searchQuotas() {
-    const keyword = document.getElementById('quotaSearchInput').value.trim();
+    const keywordInput = document.getElementById('quotaSearchInput');
+    if (!keywordInput) return;
+    
+    const keyword = keywordInput.value.trim();
     const quotaList = document.getElementById('quotaList');
+    if (!quotaList) return;
     
     if (!keyword) {
         quotaList.innerHTML = '<p>请输入关键词搜索企业定额</p>';
@@ -648,7 +675,11 @@ async function searchQuotas() {
     quotaList.innerHTML = '<p>搜索中...</p>';
     
     try {
-        const response = await fetch(API_BASE + '/quotas/search?keyword=' + encodeURIComponent(keyword));
+        let url = API_BASE + '/quotas/search?keyword=' + encodeURIComponent(keyword);
+        if (currentVersionId) {
+            url += '&versionId=' + currentVersionId;
+        }
+        const response = await fetch(url);
         const quotas = await response.json();
         
         if (quotas.length === 0) {
@@ -902,38 +933,45 @@ window.onclick = function(event) {
     }
 }
 
-// ==================== 标签页切换 ====================
-function switchTab(tabName) {
+// ==================== 导航切换 ====================
+function switchNav(navName) {
     // 隐藏所有标签页内容
     document.querySelectorAll('.tab-content').forEach(tab => {
         tab.classList.remove('active');
+        tab.style.display = 'none';
     });
     
-    // 移除所有标签按钮的active状态
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.classList.remove('active');
+    // 移除所有导航项的active状态
+    document.querySelectorAll('.nav-item').forEach(item => {
+        item.classList.remove('active');
     });
     
-    // 显示选中的标签页
-    if (tabName === 'items') {
+    // 显示选中的导航页
+    if (navName === 'items') {
         document.getElementById('itemsTab').classList.add('active');
-        document.querySelectorAll('.tab-btn')[0].classList.add('active');
+        document.getElementById('itemsTab').style.display = 'flex';
+        document.querySelectorAll('.nav-item')[0].classList.add('active');
         loadItems();
-    } else if (tabName === 'quotas') {
-        document.getElementById('quotasTab').classList.add('active');
-        document.querySelectorAll('.tab-btn')[1].classList.add('active');
-        loadQuotas();
+    } else if (navName === 'versions') {
+        document.getElementById('versionsTab').classList.add('active');
+        document.getElementById('versionsTab').style.display = 'flex';
+        document.querySelectorAll('.nav-item')[1].classList.add('active');
+        loadVersions();
     }
 }
 
 // ==================== 定额管理模块 ====================
 let currentEditQuotaId = null;
-let selectedQuotaIds = new Set();
+// selectedQuotaIds 已在文件开头声明，不需要重复声明
 
 // 加载定额列表
 async function loadQuotas() {
     try {
-        const response = await fetch(API_BASE + '/quotas');
+        let url = API_BASE + '/quotas';
+        if (currentViewingVersionId) {
+            url += '?versionId=' + currentViewingVersionId;
+        }
+        const response = await fetch(url);
         const quotas = await response.json();
         renderQuotasTable(quotas);
     } catch (error) {
@@ -1638,3 +1676,389 @@ function initTableScrollbar(containerId, scrollbarId, thumbId) {
     }, 1000);
 }
 
+// ==================== 版本管理模块 ====================
+
+let currentEditVersionId = null;
+
+// 加载版本列表
+async function loadVersions() {
+    try {
+        const response = await fetch(API_BASE + '/versions');
+        const versions = await response.json();
+        renderVersionsTable(versions);
+    } catch (error) {
+        console.error('加载版本数据失败：', error);
+    }
+}
+
+// 渲染版本表格
+function renderVersionsTable(versions) {
+    const tbody = document.getElementById('versionsTableBody');
+    if (!tbody) return;
+    
+    if (versions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-message">暂无数据，请先新增版本</td></tr>';
+        selectedVersionIds.clear();
+        updateVersionBatchActions();
+        return;
+    }
+    
+    tbody.innerHTML = versions.map((version, index) => {
+        const isSelected = selectedVersionIds.has(version.id);
+        const createTime = version.createTime ? new Date(version.createTime).toLocaleString('zh-CN') : '';
+        const updateTime = version.updateTime ? new Date(version.updateTime).toLocaleString('zh-CN') : '';
+        return `
+            <tr style="cursor: pointer;" onclick="viewVersionDetail(${version.id}, '${(version.versionName || '').replace(/'/g, "\\'")}')">
+                <td onclick="event.stopPropagation();">
+                    <input type="checkbox" ${isSelected ? 'checked' : ''} 
+                           onchange="toggleVersionSelection(${version.id}, this.checked)">
+                </td>
+                <td style="text-align: center; font-weight: bold;">${index + 1}</td>
+                <td>${version.versionName || ''}</td>
+                <td>${version.description || ''}</td>
+                <td>${createTime}</td>
+                <td>${updateTime}</td>
+                <td onclick="event.stopPropagation();">
+                    <button onclick="event.stopPropagation(); openVersionEditModal(${version.id})" class="btn-primary" style="padding: 5px 10px; margin-right: 5px;">编辑</button>
+                    <button onclick="event.stopPropagation(); deleteVersion(${version.id})" class="btn-danger" style="padding: 5px 10px;">删除</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+    
+    updateVersionBatchActions();
+}
+
+// 查看版本明细
+function viewVersionDetail(versionId, versionName) {
+    currentViewingVersionId = versionId;
+    const titleEl = document.getElementById('versionDetailTitle');
+    if (titleEl) {
+        titleEl.textContent = versionName + ' - 定额明细';
+    }
+    const versionsTab = document.getElementById('versionsTab');
+    const versionDetailTab = document.getElementById('versionDetailTab');
+    if (versionsTab) {
+        versionsTab.classList.remove('active');
+        versionsTab.style.display = 'none';
+    }
+    if (versionDetailTab) {
+        versionDetailTab.classList.add('active');
+        versionDetailTab.style.display = 'flex';
+    }
+    loadQuotas();
+}
+
+// 返回版本列表
+function backToVersionList() {
+    currentViewingVersionId = null;
+    const versionDetailTab = document.getElementById('versionDetailTab');
+    const versionsTab = document.getElementById('versionsTab');
+    if (versionDetailTab) {
+        versionDetailTab.classList.remove('active');
+        versionDetailTab.style.display = 'none';
+    }
+    if (versionsTab) {
+        versionsTab.classList.add('active');
+        versionsTab.style.display = 'flex';
+    }
+    loadVersions();
+}
+
+// 打开版本编辑模态框
+function openVersionEditModal(versionId) {
+    const modal = document.getElementById('versionEditModal');
+    if (!modal) return;
+    
+    const title = document.getElementById('versionEditModalTitle');
+    const nameInput = document.getElementById('editVersionName');
+    const descInput = document.getElementById('editVersionDescription');
+    const importSection = document.getElementById('versionImportSection');
+    
+    if (versionId) {
+        if (title) title.textContent = '编辑版本';
+        if (importSection) importSection.style.display = 'none';
+        // 加载版本数据
+        fetch(API_BASE + '/versions/' + versionId)
+            .then(response => response.json())
+            .then(version => {
+                if (nameInput) nameInput.value = version.versionName || '';
+                if (descInput) descInput.value = version.description || '';
+                currentEditVersionId = versionId;
+            })
+            .catch(error => {
+                console.error('加载版本数据失败：', error);
+                alert('加载版本数据失败');
+            });
+    } else {
+        if (title) title.textContent = '新增版本';
+        if (importSection) importSection.style.display = 'block';
+        if (nameInput) nameInput.value = '';
+        if (descInput) descInput.value = '';
+        const fileInput = document.getElementById('versionQuotaFile');
+        if (fileInput) fileInput.value = '';
+        currentEditVersionId = null;
+    }
+    
+    modal.style.display = 'block';
+}
+
+// 关闭版本编辑模态框
+function closeVersionEditModal() {
+    const modal = document.getElementById('versionEditModal');
+    if (modal) modal.style.display = 'none';
+    currentEditVersionId = null;
+}
+
+// 保存版本
+async function saveVersion() {
+    const nameInput = document.getElementById('editVersionName');
+    const descInput = document.getElementById('editVersionDescription');
+    const fileInput = document.getElementById('versionQuotaFile');
+    
+    if (!nameInput || !nameInput.value.trim()) {
+        alert('版本名称不能为空');
+        return;
+    }
+    
+    try {
+        let versionId = currentEditVersionId;
+        
+        // 保存版本信息
+        const versionData = {
+            versionName: nameInput.value.trim(),
+            description: descInput ? descInput.value.trim() : ''
+        };
+        
+        let response;
+        if (versionId) {
+            response = await fetch(API_BASE + '/versions/' + versionId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(versionData)
+            });
+        } else {
+            response = await fetch(API_BASE + '/versions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(versionData)
+            });
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            if (!versionId) {
+                versionId = result.version.id;
+            }
+            
+            // 如果有文件，导入定额
+            if (fileInput && fileInput.files[0]) {
+                const formData = new FormData();
+                formData.append('file', fileInput.files[0]);
+                
+                const importResponse = await fetch(API_BASE + '/versions/' + versionId + '/import-quotas', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const importResult = await importResponse.json();
+                if (importResult.success) {
+                    alert('版本保存成功，并导入了 ' + importResult.count + ' 条定额数据');
+                } else {
+                    alert('版本保存成功，但导入定额失败：' + importResult.message);
+                }
+            } else {
+                alert('版本保存成功');
+            }
+            
+            closeVersionEditModal();
+            loadVersions();
+            loadVersionOptions();
+        } else {
+            alert('保存失败：' + result.message);
+        }
+    } catch (error) {
+        console.error('保存版本失败：', error);
+        alert('保存失败：' + error.message);
+    }
+}
+
+// 删除版本
+async function deleteVersion(versionId) {
+    if (!confirm('确定要删除此版本吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(API_BASE + '/versions/' + versionId, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('删除成功');
+            loadVersions();
+            loadVersionOptions();
+            if (currentViewingVersionId === versionId) {
+                backToVersionList();
+            }
+        } else {
+            alert('删除失败：' + result.message);
+        }
+    } catch (error) {
+        console.error('删除版本失败：', error);
+        alert('删除失败：' + error.message);
+    }
+}
+
+// 批量删除版本
+async function batchDeleteVersions() {
+    if (selectedVersionIds.size === 0) {
+        alert('请先选择要删除的版本');
+        return;
+    }
+    
+    if (!confirm('确定要删除选中的 ' + selectedVersionIds.size + ' 个版本吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(API_BASE + '/versions/batch', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(Array.from(selectedVersionIds))
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('批量删除成功');
+            selectedVersionIds.clear();
+            loadVersions();
+            loadVersionOptions();
+        } else {
+            alert('批量删除失败：' + result.message);
+        }
+    } catch (error) {
+        console.error('批量删除版本失败：', error);
+        alert('批量删除失败：' + error.message);
+    }
+}
+
+// 切换版本选择
+function toggleVersionSelection(versionId, checked) {
+    if (checked) {
+        selectedVersionIds.add(versionId);
+    } else {
+        selectedVersionIds.delete(versionId);
+    }
+    updateVersionBatchActions();
+}
+
+// 全选/取消全选版本
+function toggleSelectAllVersions() {
+    const checkbox = document.getElementById('selectAllVersions');
+    if (!checkbox) return;
+    
+    const checkboxes = document.querySelectorAll('#versionsTableBody input[type="checkbox"]');
+    
+    checkboxes.forEach(cb => {
+        const match = cb.getAttribute('onchange').match(/\d+/);
+        if (match) {
+            const versionId = parseInt(match[0]);
+            cb.checked = checkbox.checked;
+            if (checkbox.checked) {
+                selectedVersionIds.add(versionId);
+            } else {
+                selectedVersionIds.delete(versionId);
+            }
+        }
+    });
+    
+    updateVersionBatchActions();
+}
+
+// 更新版本批量操作按钮
+function updateVersionBatchActions() {
+    const btn = document.getElementById('toolbarBatchDeleteVersionsBtn');
+    if (btn) {
+        if (selectedVersionIds.size > 0) {
+            btn.style.display = 'inline-block';
+        } else {
+            btn.style.display = 'none';
+        }
+    }
+}
+
+// 加载版本选项（用于匹配界面的下拉框）
+async function loadVersionOptions() {
+    try {
+        const response = await fetch(API_BASE + '/versions');
+        const versions = await response.json();
+        const select = document.getElementById('versionSelect');
+        if (select) {
+            select.innerHTML = '<option value="">全部版本</option>' + 
+                versions.map(v => `<option value="${v.id}">${v.versionName}</option>`).join('');
+        }
+    } catch (error) {
+        console.error('加载版本选项失败：', error);
+    }
+}
+
+// 导入定额到版本
+async function importQuotasToVersion() {
+    if (!currentViewingVersionId) {
+        alert('请先选择版本');
+        return;
+    }
+    
+    const fileInput = document.createElement('input');
+    fileInput.type = 'file';
+    fileInput.accept = '.xlsx,.xls';
+    fileInput.onchange = async function() {
+        if (!fileInput.files[0]) return;
+        
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        
+        try {
+            const response = await fetch(API_BASE + '/versions/' + currentViewingVersionId + '/import-quotas', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                alert('导入成功，共导入 ' + result.count + ' 条企业定额数据');
+                loadQuotas();
+            } else {
+                alert('导入失败：' + result.message);
+            }
+        } catch (error) {
+            console.error('导入失败：', error);
+            alert('导入失败：' + error.message);
+        }
+    };
+    
+    fileInput.click();
+}
+
+// 确保所有函数都在全局作用域（防止作用域问题导致按钮无法点击）
+if (typeof window !== 'undefined') {
+    window.switchNav = switchNav;
+    window.loadVersions = loadVersions;
+    window.openVersionEditModal = openVersionEditModal;
+    window.closeVersionEditModal = closeVersionEditModal;
+    window.saveVersion = saveVersion;
+    window.deleteVersion = deleteVersion;
+    window.batchDeleteVersions = batchDeleteVersions;
+    window.toggleVersionSelection = toggleVersionSelection;
+    window.toggleSelectAllVersions = toggleSelectAllVersions;
+    window.viewVersionDetail = viewVersionDetail;
+    window.backToVersionList = backToVersionList;
+    window.importQuotasToVersion = importQuotasToVersion;
+    window.loadVersionOptions = loadVersionOptions;
+}

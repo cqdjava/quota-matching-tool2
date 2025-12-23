@@ -12,11 +12,22 @@
             <h1>企业定额管理系统</h1>
         </header>
 
-        <!-- 标签页导航 -->
-        <div class="tabs">
-            <button class="tab-btn active" onclick="switchTab('items')">定额匹配系统</button>
-            <button class="tab-btn" onclick="switchTab('quotas')">定额管理</button>
-        </div>
+        <!-- 主内容区域 -->
+        <div class="main-content">
+            <!-- 左侧导航栏 -->
+            <div class="sidebar">
+                <div class="nav-item active" onclick="switchNav('items')">
+                    <span class="nav-icon">📋</span>
+                    <span class="nav-text">定额匹配</span>
+                </div>
+                <div class="nav-item" onclick="switchNav('versions')">
+                    <span class="nav-icon">📚</span>
+                    <span class="nav-text">定额管理</span>
+                </div>
+            </div>
+
+            <!-- 右侧内容区 -->
+            <div class="content-area">
 
         <!-- 项目清单管理标签页 -->
         <div id="itemsTab" class="tab-content active">
@@ -34,6 +45,10 @@
             <div class="match-export-section">
                 <h2>定额匹配与数据导出</h2>
                 <div class="match-export-buttons">
+                    <label for="versionSelect" style="min-width: 100px;">选择定额版本：</label>
+                    <select id="versionSelect" style="padding: 8px; border: 2px solid #bbdefb; border-radius: 4px; min-width: 200px;">
+                        <option value="">全部版本</option>
+                    </select>
                     <button onclick="matchQuotas()" class="btn-primary">开始批量匹配</button>
                     <span id="matchStatus"></span>
                     <button onclick="exportData()" class="btn-success">导出匹配结果</button>
@@ -82,51 +97,80 @@
         </div>
         </div>
 
-        <!-- 定额管理标签页 -->
-        <div id="quotasTab" class="tab-content">
-            <div class="quota-management-panel">
-                <h2>企业定额管理系统</h2>
+        <!-- 版本管理标签页 -->
+        <div id="versionsTab" class="tab-content">
+            <div class="version-management-panel">
+                <h2>定额版本管理</h2>
+                <div class="toolbar">
+                    <button onclick="openVersionEditModal(null)" class="btn-primary">新增版本</button>
+                    <button onclick="loadVersions()" class="btn-primary">刷新列表</button>
+                    <button onclick="batchDeleteVersions()" class="btn-danger" id="toolbarBatchDeleteVersionsBtn" style="display: none;">批量删除</button>
+                </div>
+                <div class="table-container" id="versionsTableContainer">
+                    <table id="versionsTable">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="selectAllVersions" onchange="toggleSelectAllVersions()"></th>
+                                <th>序号</th>
+                                <th>版本名称</th>
+                                <th>描述</th>
+                                <th>创建时间</th>
+                                <th>更新时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="versionsTableBody">
+                            <tr>
+                                <td colspan="7" class="empty-message">暂无数据，请先新增版本</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 版本明细标签页（点击版本后显示） -->
+        <div id="versionDetailTab" class="tab-content" style="display: none;">
+            <div class="version-detail-panel">
+                <div class="version-detail-header">
+                    <button onclick="backToVersionList()" class="btn-secondary" style="margin-right: 15px;">← 返回版本列表</button>
+                    <h2 id="versionDetailTitle">版本明细</h2>
+                </div>
                 <div class="toolbar">
                     <input type="text" id="quotaManagementSearchInput" placeholder="搜索定额编码、名称或特征值..." onkeyup="filterQuotas()">
                     <button onclick="loadQuotas()" class="btn-primary">刷新列表</button>
                     <button onclick="openQuotaEditModal(null)" class="btn-primary">新增定额</button>
                     <button onclick="exportQuotas()" class="btn-success">导出定额</button>
-                    <button onclick="importQuotasFromFile()" class="btn-primary">导入定额</button>
+                    <button onclick="importQuotasToVersion()" class="btn-primary">导入定额</button>
                     <button onclick="batchDeleteQuotas()" class="btn-danger" id="toolbarBatchDeleteBtn" style="display: none;">批量删除</button>
                 </div>
-                <div class="table-scrollbar-wrapper">
-                    <div class="table-container" id="quotasTableContainer">
-                        <table id="quotasTable">
-                            <thead>
-                                <tr>
-                                    <th><input type="checkbox" id="selectAllQuotas" onchange="toggleSelectAllQuotas()"></th>
-                                    <th>序号</th>
-                                    <th>定额编码</th>
-                                    <th>定额名称</th>
-                                    <th>项目特征值</th>
-                                    <th>单位</th>
-                                    <th>单价</th>
-                                    <th>人工费</th>
-                                    <th>材料费</th>
-                                    <th>机械费</th>
-                                    <th>备注</th>
-                                    <th>操作</th>
-                                </tr>
-                            </thead>
-                            <tbody id="quotasTableBody">
-                                <tr>
-                                    <td colspan="12" class="empty-message">暂无数据，请先导入或新增企业定额</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                    <div class="table-scrollbar" id="quotasTableScrollbar">
-                        <div class="table-scrollbar-thumb" id="quotasTableScrollbarThumb"></div>
-                    </div>
+                <div class="table-container" id="quotasTableContainer">
+                    <table id="quotasTable">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="selectAllQuotas" onchange="toggleSelectAllQuotas()"></th>
+                                <th>序号</th>
+                                <th>定额编码</th>
+                                <th>定额名称</th>
+                                <th>项目特征值</th>
+                                <th>单位</th>
+                                <th>单价</th>
+                                <th>人工费</th>
+                                <th>材料费</th>
+                                <th>机械费</th>
+                                <th>备注</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="quotasTableBody">
+                            <tr>
+                                <td colspan="12" class="empty-message">暂无数据，请先导入或新增企业定额</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
-                <div class="batch-actions" id="batchActions" style="display: none;">
-                    <button onclick="batchDeleteQuotas()" class="btn-danger">批量删除</button>
-                </div>
+            </div>
+        </div>
             </div>
         </div>
     </div>
@@ -195,6 +239,32 @@
                 </div>
                 <div class="form-group" style="text-align: right;">
                     <button onclick="saveItem()" class="btn-primary">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 版本编辑模态框 -->
+    <div id="versionEditModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <span class="close" onclick="closeVersionEditModal()">&times;</span>
+            <h2 id="versionEditModalTitle">新增版本</h2>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>版本名称：<span style="color: red;">*</span></label>
+                    <input type="text" id="editVersionName" placeholder="请输入版本名称" required>
+                </div>
+                <div class="form-group">
+                    <label>描述：</label>
+                    <textarea id="editVersionDescription" rows="3" placeholder="请输入版本描述"></textarea>
+                </div>
+                <div class="form-group" id="versionImportSection" style="display: none;">
+                    <label>导入定额明细（Excel）：</label>
+                    <input type="file" id="versionQuotaFile" accept=".xlsx,.xls">
+                </div>
+                <div class="form-group" style="text-align: right;">
+                    <button onclick="closeVersionEditModal()" class="btn-secondary" style="margin-right: 10px;">取消</button>
+                    <button onclick="saveVersion()" class="btn-primary">保存</button>
                 </div>
             </div>
         </div>
