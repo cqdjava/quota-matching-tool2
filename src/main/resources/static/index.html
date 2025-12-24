@@ -32,27 +32,22 @@
         <!-- 项目清单管理标签页 -->
         <div id="itemsTab" class="tab-content active">
         <div class="action-panel">
-            <div class="upload-section">
-                <h2>数据导入</h2>
-                <div class="upload-group">
-                    <label for="itemFile">导入项目清单数据（Excel）</label>
+            <div class="compact-controls">
+                <div class="control-group">
+                    <label for="itemFile">数据导入：</label>
                     <input type="file" id="itemFile" accept=".xlsx,.xls">
-                    <button onclick="importItems()">导入清单</button>
+                    <button onclick="importItems()" class="btn-primary">导入清单</button>
                     <span id="itemStatus"></span>
                 </div>
-            </div>
-
-            <div class="match-export-section">
-                <h2>定额匹配与数据导出</h2>
-                <div class="match-export-buttons">
-                    <label for="versionSelect" style="min-width: 100px;">选择定额版本：</label>
-                    <select id="versionSelect" style="padding: 8px; border: 2px solid #bbdefb; border-radius: 4px; min-width: 200px;">
+                <div class="control-group">
+                    <label for="versionSelect">定额版本：</label>
+                    <select id="versionSelect" style="padding: 6px; border: 2px solid #bbdefb; border-radius: 4px; min-width: 150px;">
                         <option value="">全部版本</option>
                     </select>
-                    <button onclick="matchQuotas()" class="btn-primary">开始批量匹配</button>
+                    <button onclick="matchQuotas()" class="btn-primary">开始匹配</button>
                     <span id="matchStatus"></span>
-                    <button onclick="exportData()" class="btn-success">导出匹配结果</button>
-                    <button onclick="clearAll()" class="btn-danger">清空所有数据</button>
+                    <button onclick="exportData()" class="btn-success">导出结果</button>
+                    <button onclick="clearAll()" class="btn-danger">清空数据</button>
                 </div>
             </div>
         </div>
@@ -65,6 +60,11 @@
                 <button onclick="openItemEditModal(null)" class="btn-primary">新增清单</button>
                 <button onclick="addNewRowToTable()" class="btn-primary">增加行</button>
                 <button onclick="batchDeleteItems()" class="btn-danger" id="toolbarBatchDeleteItemsBtn" style="display: none;">批量删除</button>
+            </div>
+            <div class="total-summary" id="totalSummary">
+                <span class="total-label">匹配后金额合计：</span>
+                <span class="total-amount" id="totalAmount">0.00</span>
+                <span class="total-unit">元</span>
             </div>
             <div class="table-container" id="itemsTableContainer">
                 <table id="itemsTable">

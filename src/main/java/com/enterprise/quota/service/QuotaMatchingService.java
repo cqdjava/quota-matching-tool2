@@ -6,12 +6,14 @@ import com.enterprise.quota.entity.ProjectItemQuota;
 import com.enterprise.quota.repository.EnterpriseQuotaRepository;
 import com.enterprise.quota.repository.ProjectItemRepository;
 import com.enterprise.quota.repository.ProjectItemQuotaRepository;
+import com.enterprise.quota.util.KeywordExtractor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.List;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 public class QuotaMatchingService {
@@ -26,9 +28,17 @@ public class QuotaMatchingService {
     private ProjectItemQuotaRepository itemQuotaRepository;
     
     @Transactional
-    public int batchMatchQuotas() {
+    public int batchMatchQuotas(Long versionId) {
         List<ProjectItem> items = itemRepository.findAll();
         int matchedCount = 0;
+        
+        // 获取所有定额（如果指定了版本，则只获取该版本的定额）
+        List<EnterpriseQuota> allQuotas;
+        if (versionId != null) {
+            allQuotas = quotaRepository.findByVersionId(versionId);
+        } else {
+            allQuotas = quotaRepository.findAll();
+        }
         
         for (ProjectItem item : items) {
             // 跳过手动修改（单定额）和多定额匹配的项目
@@ -43,7 +53,8 @@ public class QuotaMatchingService {
                 continue;
             }
             
-            EnterpriseQuota matchedQuota = findBestMatch(item);
+            // 使用双向匹配算法找到最佳匹配
+            EnterpriseQuota matchedQuota = findBestMatchWithBidirectionalMatching(item, allQuotas);
             
             if (matchedQuota != null) {
                 item.setMatchedQuotaId(matchedQuota.getId());
@@ -68,30 +79,118 @@ public class QuotaMatchingService {
         return matchedCount;
     }
     
-    private EnterpriseQuota findBestMatch(ProjectItem item) {
-        if (item.getItemName() != null && !item.getItemName().trim().isEmpty()) {
-            List<EnterpriseQuota> nameMatches = quotaRepository.findByQuotaNameContaining(item.getItemName());
-            if (!nameMatches.isEmpty()) {
-                return nameMatches.get(0);
-            }
+    /**
+     * 使用双向匹配算法找到最佳匹配
+     * 双向匹配：既从项目清单匹配到定额，也从定额匹配到项目清单，选择匹配度最高的
+     */
+    private EnterpriseQuota findBestMatchWithBidirectionalMatching(ProjectItem item, List<EnterpriseQuota> quotas) {
+        if (quotas.isEmpty()) {
+            return null;
         }
         
+        // 提取项目清单的关键词
+        List<String> itemKeywords = new ArrayList<>();
+        if (item.getItemName() != null && !item.getItemName().trim().isEmpty()) {
+            itemKeywords.addAll(KeywordExtractor.extractKeywords(item.getItemName()));
+        }
         if (item.getFeatureValue() != null && !item.getFeatureValue().trim().isEmpty()) {
-            List<EnterpriseQuota> featureMatches = quotaRepository.findByFeatureValueContaining(item.getFeatureValue());
-            if (!featureMatches.isEmpty()) {
-                return featureMatches.get(0);
+            itemKeywords.addAll(KeywordExtractor.extractKeywords(item.getFeatureValue()));
+        }
+        
+        if (itemKeywords.isEmpty()) {
+            return null;
+        }
+        
+        // 计算每个定额的匹配得分
+        List<MatchScore> scores = new ArrayList<>();
+        
+        for (EnterpriseQuota quota : quotas) {
+            double score = calculateBidirectionalMatchScore(item, quota, itemKeywords);
+            if (score > 0) {
+                scores.add(new MatchScore(quota, score));
             }
         }
         
-        if (item.getItemName() != null && !item.getItemName().trim().isEmpty()) {
-            String keyword = item.getItemName();
-            List<EnterpriseQuota> keywordMatches = quotaRepository.findByKeyword(keyword);
-            if (!keywordMatches.isEmpty()) {
-                return keywordMatches.get(0);
-            }
+        // 如果没有匹配，返回null
+        if (scores.isEmpty()) {
+            return null;
+        }
+        
+        // 按得分排序，返回得分最高的（得分需大于阈值0.3）
+        scores.sort((a, b) -> Double.compare(b.score, a.score));
+        MatchScore bestMatch = scores.get(0);
+        
+        // 只返回得分大于阈值的匹配
+        if (bestMatch.score >= 0.3) {
+            return bestMatch.quota;
         }
         
         return null;
+    }
+    
+    /**
+     * 计算双向匹配得分
+     */
+    private double calculateBidirectionalMatchScore(ProjectItem item, EnterpriseQuota quota, List<String> itemKeywords) {
+        double score = 0.0;
+        double totalWeight = 0.0;
+        
+        // 方向1：从项目清单匹配到定额（权重0.6）
+        if (item.getItemName() != null && !item.getItemName().trim().isEmpty()) {
+            double nameScore = KeywordExtractor.calculateTextMatchScore(item.getItemName(), quota.getQuotaName());
+            score += nameScore * 0.4;
+            totalWeight += 0.4;
+        }
+        
+        if (item.getFeatureValue() != null && !item.getFeatureValue().trim().isEmpty() 
+                && quota.getFeatureValue() != null && !quota.getFeatureValue().trim().isEmpty()) {
+            double featureScore = KeywordExtractor.calculateTextMatchScore(item.getFeatureValue(), quota.getFeatureValue());
+            score += featureScore * 0.3;
+            totalWeight += 0.3;
+        }
+        
+        // 方向2：从定额匹配到项目清单（权重0.3）
+        List<String> quotaKeywords = new ArrayList<>();
+        if (quota.getQuotaName() != null && !quota.getQuotaName().trim().isEmpty()) {
+            quotaKeywords.addAll(KeywordExtractor.extractKeywords(quota.getQuotaName()));
+        }
+        if (quota.getFeatureValue() != null && !quota.getFeatureValue().trim().isEmpty()) {
+            quotaKeywords.addAll(KeywordExtractor.extractKeywords(quota.getFeatureValue()));
+        }
+        
+        if (!quotaKeywords.isEmpty()) {
+            double keywordScore = KeywordExtractor.calculateSimilarity(itemKeywords, quotaKeywords);
+            score += keywordScore * 0.3;
+            totalWeight += 0.3;
+        }
+        
+        // 归一化得分
+        if (totalWeight > 0) {
+            score = score / totalWeight;
+        }
+        
+        return score;
+    }
+    
+    /**
+     * 匹配得分内部类
+     */
+    private static class MatchScore {
+        EnterpriseQuota quota;
+        double score;
+        
+        MatchScore(EnterpriseQuota quota, double score) {
+            this.quota = quota;
+            this.score = score;
+        }
+    }
+    
+    /**
+     * 兼容旧版本的匹配方法（不使用版本ID）
+     */
+    @Transactional
+    public int batchMatchQuotas() {
+        return batchMatchQuotas(null);
     }
     
     @Transactional

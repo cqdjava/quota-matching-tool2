@@ -17,5 +17,20 @@ public interface EnterpriseQuotaRepository extends JpaRepository<EnterpriseQuota
     
     @Query("SELECT e FROM EnterpriseQuota e WHERE e.quotaName LIKE %:keyword% OR e.featureValue LIKE %:keyword%")
     List<EnterpriseQuota> findByKeyword(@Param("keyword") String keyword);
+    
+    // 版本相关查询
+    List<EnterpriseQuota> findByVersionId(Long versionId);
+    
+    @Query("SELECT e FROM EnterpriseQuota e WHERE e.versionId = :versionId AND (e.quotaName LIKE %:keyword% OR e.featureValue LIKE %:keyword%)")
+    List<EnterpriseQuota> findByVersionIdAndKeyword(@Param("versionId") Long versionId, @Param("keyword") String keyword);
+    
+    @Query("SELECT e FROM EnterpriseQuota e WHERE e.versionId = :versionId AND e.quotaName LIKE %:quotaName%")
+    List<EnterpriseQuota> findByVersionIdAndQuotaNameContaining(@Param("versionId") Long versionId, @Param("quotaName") String quotaName);
+    
+    @Query("SELECT e FROM EnterpriseQuota e WHERE e.versionId = :versionId AND e.featureValue LIKE %:featureValue%")
+    List<EnterpriseQuota> findByVersionIdAndFeatureValueContaining(@Param("versionId") Long versionId, @Param("featureValue") String featureValue);
+    
+    // 删除指定版本的所有定额
+    void deleteByVersionId(Long versionId);
 }
 

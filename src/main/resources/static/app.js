@@ -201,8 +201,12 @@ function renderItemsTable(items) {
         tbody.innerHTML = '<tr><td colspan="15" class="empty-message">暂无数据，请先导入项目清单</td></tr>';
         selectedItemIds.clear();
         updateItemBatchActions();
+        updateTotalAmount(0);
         return;
     }
+    
+    // 计算总金额
+    let totalAmount = 0;
     
     tbody.innerHTML = items.map((item, index) => {
         const statusClass = item.matchStatus === 1 ? 'status-matched' : 
@@ -226,6 +230,12 @@ function renderItemsTable(items) {
             quotaDisplay = item.matchedQuotaCode || '';
             quotaNameDisplay = item.matchedQuotaName || '';
             quotaFeatureDisplay = item.matchedQuotaFeatureValue || '';
+        }
+        
+        // 累加总金额（只计算有匹配的项目）
+        if (item.totalPrice != null) {
+            const price = parseFloat(item.totalPrice) || 0;
+            totalAmount += price;
         }
         
         const isSelected = selectedItemIds.has(item.id);
@@ -258,12 +268,23 @@ function renderItemsTable(items) {
         `;
     }).join('');
     
+    // 更新总金额显示
+    updateTotalAmount(totalAmount);
+    
     // 初始化列宽调整功能、批量操作和滚动
     setTimeout(() => {
         initResizableColumns();
         updateItemBatchActions();
         ensureTableScrolling();
     }, 100);
+}
+
+// 更新总金额显示
+function updateTotalAmount(total) {
+    const totalAmountElement = document.getElementById('totalAmount');
+    if (totalAmountElement) {
+        totalAmountElement.textContent = total.toFixed(2);
+    }
 }
 
 // 增加新行到表格
@@ -1512,6 +1533,70 @@ function initResizableQuotaColumns() {
     });
 }
 
+// 初始化列宽调整功能（版本表格）
+function initResizableVersionColumns() {
+    const table = document.getElementById('versionsTable');
+    if (!table) return;
+    
+    const headers = table.querySelectorAll('thead th');
+    
+    headers.forEach((header, index) => {
+        // 跳过第一列（复选框）和最后一列（操作列），不需要调整
+        if (index === 0 || index === headers.length - 1) return;
+        
+        // 检查是否已有调整器
+        if (header.querySelector('.resizer')) return;
+        
+        // 创建调整器
+        const resizer = document.createElement('div');
+        resizer.className = 'resizer';
+        header.appendChild(resizer);
+        
+        let startX, startWidth, isResizing = false;
+        
+        resizer.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            e.stopPropagation(); // 阻止触发行的点击事件
+            isResizing = true;
+            startX = e.pageX;
+            startWidth = header.offsetWidth;
+            header.classList.add('resizing');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            
+            const width = startWidth + (e.pageX - startX);
+            if (width > 50) { // 最小宽度50px
+                header.style.width = width + 'px';
+                header.style.minWidth = width + 'px';
+                
+                // 同步调整同一列的所有单元格
+                const columnIndex = Array.from(headers).indexOf(header);
+                const rows = table.querySelectorAll('tbody tr');
+                rows.forEach(row => {
+                    const cell = row.cells[columnIndex];
+                    if (cell) {
+                        cell.style.width = width + 'px';
+                        cell.style.minWidth = width + 'px';
+                    }
+                });
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                header.classList.remove('resizing');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+            }
+        });
+    });
+}
+
 // 初始化表格滚动条
 function initTableScrollbar(containerId, scrollbarId, thumbId) {
     const container = document.getElementById(containerId);
@@ -1726,7 +1811,11 @@ function renderVersionsTable(versions) {
         `;
     }).join('');
     
-    updateVersionBatchActions();
+    // 初始化列宽调整功能
+    setTimeout(() => {
+        initResizableVersionColumns();
+        updateVersionBatchActions();
+    }, 100);
 }
 
 // 查看版本明细

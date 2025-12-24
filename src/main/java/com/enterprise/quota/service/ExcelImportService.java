@@ -15,7 +15,7 @@ import java.util.List;
 @Service
 public class ExcelImportService {
     
-    public List<EnterpriseQuota> importEnterpriseQuotas(MultipartFile file) throws IOException {
+    public List<EnterpriseQuota> importEnterpriseQuotas(MultipartFile file, Long versionId) throws IOException {
         List<EnterpriseQuota> quotas = new ArrayList<>();
         
         try (Workbook workbook = new XSSFWorkbook(file.getInputStream())) {
@@ -37,11 +37,20 @@ public class ExcelImportService {
                 if (row.getLastCellNum() > 8) {
                     quota.setRemark(getCellValue(row.getCell(8)));
                 }
+                // 设置版本ID
+                quota.setVersionId(versionId);
                 quotas.add(quota);
             }
         }
         
         return quotas;
+    }
+    
+    /**
+     * 兼容旧版本的导入方法（不设置版本ID）
+     */
+    public List<EnterpriseQuota> importEnterpriseQuotas(MultipartFile file) throws IOException {
+        return importEnterpriseQuotas(file, null);
     }
     
     public List<ProjectItem> importProjectItems(MultipartFile file) throws IOException {

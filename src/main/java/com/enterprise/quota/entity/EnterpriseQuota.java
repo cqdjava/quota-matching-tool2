@@ -40,6 +40,9 @@ public class EnterpriseQuota {
     
     @Column(name = "remark", length = 1000)
     private String remark;
+    
+    @Column(name = "version_id")
+    private Long versionId;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -61,5 +64,7 @@ public class EnterpriseQuota {
     public void setMachineCost(BigDecimal machineCost) { this.machineCost = machineCost; }
     public String getRemark() { return remark; }
     public void setRemark(String remark) { this.remark = remark; }
+    public Long getVersionId() { return versionId; }
+    public void setVersionId(Long versionId) { this.versionId = versionId; }
 }
 

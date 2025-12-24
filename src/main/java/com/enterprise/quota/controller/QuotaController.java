@@ -57,8 +57,7 @@ public class QuotaController {
             @RequestParam(value = "versionId", required = false) Long versionId) {
         Map<String, Object> result = new HashMap<>();
         try {
-            List<EnterpriseQuota> quotas = importService.importEnterpriseQuotas(file);
-            // 暂时忽略版本ID，因为EnterpriseQuota没有versionId字段
+            List<EnterpriseQuota> quotas = importService.importEnterpriseQuotas(file, versionId);
             quotaRepository.saveAll(quotas);
             result.put("success", true);
             result.put("message", "导入成功，共导入 " + quotas.size() + " 条企业定额数据");
@@ -93,8 +92,7 @@ public class QuotaController {
             @RequestParam(value = "versionId", required = false) Long versionId) {
         Map<String, Object> result = new HashMap<>();
         try {
-            // 暂时忽略版本ID，因为匹配服务不支持版本
-            int matchedCount = matchingService.batchMatchQuotas();
+            int matchedCount = matchingService.batchMatchQuotas(versionId);
             result.put("success", true);
             result.put("message", "匹配完成，共匹配 " + matchedCount + " 条项目清单");
             result.put("matchedCount", matchedCount);
@@ -248,7 +246,9 @@ public class QuotaController {
     @GetMapping("/quotas")
     public ResponseEntity<List<EnterpriseQuota>> getAllQuotas(
             @RequestParam(value = "versionId", required = false) Long versionId) {
-        // 暂时忽略版本ID，返回所有定额
+        if (versionId != null) {
+            return ResponseEntity.ok(quotaRepository.findByVersionId(versionId));
+        }
         return ResponseEntity.ok(quotaRepository.findAll());
     }
     
@@ -256,7 +256,9 @@ public class QuotaController {
     public ResponseEntity<List<EnterpriseQuota>> searchQuotas(
             @RequestParam String keyword,
             @RequestParam(value = "versionId", required = false) Long versionId) {
-        // 暂时忽略版本ID，返回所有匹配的定额
+        if (versionId != null) {
+            return ResponseEntity.ok(quotaRepository.findByVersionIdAndKeyword(versionId, keyword));
+        }
         return ResponseEntity.ok(quotaRepository.findByKeyword(keyword));
     }
     
@@ -603,11 +605,14 @@ public class QuotaController {
                 return ResponseEntity.badRequest().body(result);
             }
             
-            // 由于EnterpriseQuota没有versionId字段，暂时只删除版本本身
+            // 先删除该版本关联的所有定额
+            quotaRepository.deleteByVersionId(versionId);
+            
+            // 再删除版本本身
             versionRepository.deleteById(versionId);
             
             result.put("success", true);
-            result.put("message", "删除成功");
+            result.put("message", "删除成功，已同步删除关联的定额数据");
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             result.put("success", false);
@@ -641,8 +646,7 @@ public class QuotaController {
                 return ResponseEntity.badRequest().body(result);
             }
             
-            List<EnterpriseQuota> quotas = importService.importEnterpriseQuotas(file);
-            // 由于EnterpriseQuota没有versionId字段，暂时只导入定额，不关联版本
+            List<EnterpriseQuota> quotas = importService.importEnterpriseQuotas(file, versionId);
             quotaRepository.saveAll(quotas);
             
             result.put("success", true);
@@ -664,12 +668,18 @@ public class QuotaController {
     public ResponseEntity<Map<String, Object>> batchDeleteVersions(@RequestBody List<Long> versionIds) {
         Map<String, Object> result = new HashMap<>();
         try {
+            int deletedQuotaCount = 0;
             for (Long versionId : versionIds) {
-                // 由于EnterpriseQuota没有versionId字段，暂时只删除版本本身
+                // 先删除该版本关联的所有定额
+                List<EnterpriseQuota> quotas = quotaRepository.findByVersionId(versionId);
+                deletedQuotaCount += quotas.size();
+                quotaRepository.deleteByVersionId(versionId);
+                
+                // 再删除版本本身
                 versionRepository.deleteById(versionId);
             }
             result.put("success", true);
-            result.put("message", "批量删除成功，共删除 " + versionIds.size() + " 个版本");
+            result.put("message", "批量删除成功，共删除 " + versionIds.size() + " 个版本和 " + deletedQuotaCount + " 条关联定额数据");
             return ResponseEntity.ok(result);
         } catch (Exception e) {
             result.put("success", false);
