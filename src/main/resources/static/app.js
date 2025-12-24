@@ -10,9 +10,13 @@ let currentViewingVersionId = null; // 当前查看的版本明细ID
 
 window.onload = function() {
     try {
-    loadItems();
+        // 检查登录状态
+        checkLoginStatus();
+        
+        loadItems();
         loadVersions();
         loadVersionOptions();
+        loadUsers(); // 加载用户列表
         // 确保表格容器可以正常滚动
         ensureTableScrolling();
         
@@ -26,6 +30,46 @@ window.onload = function() {
         alert('页面加载出错：' + error.message);
     }
 };
+
+// 检查登录状态
+async function checkLoginStatus() {
+    try {
+        const response = await fetch('/api/auth/check');
+        const result = await response.json();
+        if (!result.loggedIn) {
+            window.location.href = '/login.html';
+            return;
+        }
+        // 显示用户信息
+        const userInfo = document.getElementById('userInfo');
+        if (userInfo) {
+            userInfo.textContent = '欢迎，' + (result.username || '用户');
+        }
+    } catch (error) {
+        console.error('检查登录状态失败:', error);
+        window.location.href = '/login.html';
+    }
+}
+
+// 退出登录
+async function logout() {
+    if (!confirm('确定要退出登录吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/auth/logout', {
+            method: 'POST'
+        });
+        const result = await response.json();
+        if (result.success) {
+            window.location.href = '/login.html';
+        }
+    } catch (error) {
+        console.error('退出登录失败:', error);
+        alert('退出登录失败：' + error.message);
+    }
+}
 
 // 确保表格容器可以正常滚动
 function ensureTableScrolling() {
@@ -976,6 +1020,16 @@ function switchNav(navName) {
     } else if (navName === 'versions') {
         document.getElementById('versionsTab').classList.add('active');
         document.getElementById('versionsTab').style.display = 'flex';
+        document.querySelectorAll('.nav-item')[1].classList.add('active');
+        loadVersions();
+    } else if (navName === 'users') {
+        const usersTab = document.getElementById('usersTab');
+        if (usersTab) {
+            usersTab.classList.add('active');
+            usersTab.style.display = 'flex';
+            document.querySelectorAll('.nav-item')[2].classList.add('active');
+            loadUsers();
+        }
         document.querySelectorAll('.nav-item')[1].classList.add('active');
         loadVersions();
     }
@@ -2150,4 +2204,313 @@ if (typeof window !== 'undefined') {
     window.backToVersionList = backToVersionList;
     window.importQuotasToVersion = importQuotasToVersion;
     window.loadVersionOptions = loadVersionOptions;
+    
+    // 用户管理相关函数
+    window.loadUsers = loadUsers;
+    window.openUserEditModal = openUserEditModal;
+    window.closeUserEditModal = closeUserEditModal;
+    window.saveUser = saveUser;
+    window.deleteUser = deleteUser;
+    window.updateUserStatus = updateUserStatus;
+    window.openChangePasswordModal = openChangePasswordModal;
+    window.closeChangePasswordModal = closeChangePasswordModal;
+    window.savePassword = savePassword;
+}
+
+// ==================== 用户管理相关函数 ====================
+
+let currentEditUserId = null;
+
+// 加载用户列表
+async function loadUsers() {
+    try {
+        const response = await fetch('/api/user/list');
+        const result = await response.json();
+        
+        if (result.success) {
+            renderUsersTable(result.users);
+        } else {
+            alert('加载用户列表失败：' + result.message);
+        }
+    } catch (error) {
+        console.error('加载用户列表失败：', error);
+        alert('加载用户列表失败：' + error.message);
+    }
+}
+
+// 渲染用户表格
+function renderUsersTable(users) {
+    const tbody = document.getElementById('usersTableBody');
+    if (!tbody) return;
+    
+    if (users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="empty-message">暂无用户数据</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = users.map((user, index) => {
+        const statusClass = user.status === 1 ? 'status-matched' : 'status-unmatched';
+        const statusText = user.status === 1 ? '启用' : '禁用';
+        const createTime = user.createTime ? new Date(user.createTime).toLocaleString('zh-CN') : '';
+        
+        return `
+            <tr>
+                <td style="text-align: center; font-weight: bold;">${index + 1}</td>
+                <td>${user.username || ''}</td>
+                <td>${user.realName || ''}</td>
+                <td>${user.email || ''}</td>
+                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                <td>${createTime}</td>
+                <td>
+                    <button onclick="openUserEditModal(${user.id})" class="btn-primary" style="padding: 5px 10px; margin-right: 5px;">编辑</button>
+                    <button onclick="updateUserStatus(${user.id}, ${user.status === 1 ? 0 : 1})" class="btn-primary" style="padding: 5px 10px; margin-right: 5px; background: ${user.status === 1 ? '#ff9800' : '#4caf50'};">
+                        ${user.status === 1 ? '禁用' : '启用'}
+                    </button>
+                    <button onclick="deleteUser(${user.id})" class="btn-danger" style="padding: 5px 10px;">删除</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// 打开用户编辑模态框
+function openUserEditModal(userId) {
+    currentEditUserId = userId;
+    const modal = document.getElementById('userEditModal');
+    const title = document.getElementById('userEditModalTitle');
+    const passwordGroup = document.getElementById('passwordGroup');
+    
+    if (userId) {
+        title.textContent = '编辑用户';
+        passwordGroup.style.display = 'none';
+        // 加载用户信息
+        loadUserInfo(userId);
+    } else {
+        title.textContent = '新增用户';
+        passwordGroup.style.display = 'block';
+        document.getElementById('editUsername').value = '';
+        document.getElementById('editPassword').value = '';
+        document.getElementById('editRealName').value = '';
+        document.getElementById('editEmail').value = '';
+    }
+    
+    modal.style.display = 'block';
+}
+
+// 加载用户信息
+async function loadUserInfo(userId) {
+    try {
+        const response = await fetch('/api/user/list');
+        const result = await response.json();
+        if (result.success) {
+            const user = result.users.find(u => u.id === userId);
+            if (user) {
+                document.getElementById('editUsername').value = user.username || '';
+                document.getElementById('editRealName').value = user.realName || '';
+                document.getElementById('editEmail').value = user.email || '';
+            }
+        }
+    } catch (error) {
+        console.error('加载用户信息失败：', error);
+    }
+}
+
+// 关闭用户编辑模态框
+function closeUserEditModal() {
+    document.getElementById('userEditModal').style.display = 'none';
+    currentEditUserId = null;
+}
+
+// 保存用户
+async function saveUser() {
+    const username = document.getElementById('editUsername').value.trim();
+    const password = document.getElementById('editPassword').value;
+    const realName = document.getElementById('editRealName').value.trim();
+    const email = document.getElementById('editEmail').value.trim();
+    
+    if (!username) {
+        alert('用户名不能为空');
+        return;
+    }
+    
+    if (!currentEditUserId && !password) {
+        alert('密码不能为空');
+        return;
+    }
+    
+    if (password && password.length < 6) {
+        alert('密码长度不能少于6位');
+        return;
+    }
+    
+    try {
+        if (currentEditUserId) {
+            // 更新用户
+            const formData = new URLSearchParams();
+            if (realName) formData.append('realName', realName);
+            if (email) formData.append('email', email);
+            
+            const response = await fetch(`/api/user/${currentEditUserId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData.toString()
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                alert('更新成功！');
+                closeUserEditModal();
+                loadUsers();
+            } else {
+                alert('更新失败：' + result.message);
+            }
+        } else {
+            // 新增用户
+            const formData = new URLSearchParams();
+            formData.append('username', username);
+            formData.append('password', password);
+            if (realName) formData.append('realName', realName);
+            if (email) formData.append('email', email);
+            
+            const response = await fetch('/api/user/register', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData.toString()
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                alert('新增成功！');
+                closeUserEditModal();
+                loadUsers();
+            } else {
+                alert('新增失败：' + result.message);
+            }
+        }
+    } catch (error) {
+        console.error('保存用户失败：', error);
+        alert('保存失败：' + error.message);
+    }
+}
+
+// 删除用户
+async function deleteUser(userId) {
+    if (!confirm('确定要删除这个用户吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/user/${userId}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            alert('删除成功！');
+            loadUsers();
+        } else {
+            alert('删除失败：' + result.message);
+        }
+    } catch (error) {
+        console.error('删除用户失败：', error);
+        alert('删除失败：' + error.message);
+    }
+}
+
+// 更新用户状态
+async function updateUserStatus(userId, status) {
+    const statusText = status === 1 ? '启用' : '禁用';
+    if (!confirm(`确定要${statusText}这个用户吗？`)) {
+        return;
+    }
+    
+    try {
+        const formData = new URLSearchParams();
+        formData.append('status', status);
+        
+        const response = await fetch(`/api/user/${userId}/status`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString()
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            alert(`${statusText}成功！`);
+            loadUsers();
+        } else {
+            alert(`${statusText}失败：` + result.message);
+        }
+    } catch (error) {
+        console.error('更新用户状态失败：', error);
+        alert('操作失败：' + error.message);
+    }
+}
+
+// 打开修改密码模态框
+function openChangePasswordModal() {
+    document.getElementById('changePasswordModal').style.display = 'block';
+    document.getElementById('oldPassword').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('confirmPassword').value = '';
+    document.getElementById('passwordErrorMessage').textContent = '';
+}
+
+// 关闭修改密码模态框
+function closeChangePasswordModal() {
+    document.getElementById('changePasswordModal').style.display = 'none';
+}
+
+// 保存密码
+async function savePassword() {
+    const oldPassword = document.getElementById('oldPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+    const errorMessage = document.getElementById('passwordErrorMessage');
+    
+    if (!oldPassword || !newPassword || !confirmPassword) {
+        errorMessage.textContent = '请填写所有字段';
+        return;
+    }
+    
+    if (newPassword.length < 6) {
+        errorMessage.textContent = '新密码长度不能少于6位';
+        return;
+    }
+    
+    if (newPassword !== confirmPassword) {
+        errorMessage.textContent = '两次输入的密码不一致';
+        return;
+    }
+    
+    try {
+        const formData = new URLSearchParams();
+        formData.append('oldPassword', oldPassword);
+        formData.append('newPassword', newPassword);
+        
+        const response = await fetch('/api/user/change-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+            },
+            body: formData.toString()
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            alert('密码修改成功！');
+            closeChangePasswordModal();
+        } else {
+            errorMessage.textContent = result.message || '修改密码失败';
+        }
+    } catch (error) {
+        console.error('修改密码失败：', error);
+        errorMessage.textContent = '修改密码失败：' + error.message;
+    }
 }

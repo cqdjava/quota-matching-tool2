@@ -10,6 +10,10 @@
     <div class="container">
         <header>
             <h1>企业定额管理系统</h1>
+            <div style="position: absolute; right: 30px; top: 50%; transform: translateY(-50%);">
+                <span id="userInfo" style="color: white; margin-right: 15px;"></span>
+                <button onclick="logout()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; color: white; cursor: pointer;">退出登录</button>
+            </div>
         </header>
 
         <!-- 主内容区域 -->
@@ -23,6 +27,10 @@
                 <div class="nav-item" onclick="switchNav('versions')">
                     <span class="nav-icon">📚</span>
                     <span class="nav-text">定额管理</span>
+                </div>
+                <div class="nav-item" onclick="switchNav('users')">
+                    <span class="nav-icon">👥</span>
+                    <span class="nav-text">用户管理</span>
                 </div>
             </div>
 
@@ -165,6 +173,38 @@
                         <tbody id="quotasTableBody">
                             <tr>
                                 <td colspan="12" class="empty-message">暂无数据，请先导入或新增企业定额</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 用户管理标签页 -->
+        <div id="usersTab" class="tab-content">
+            <div class="version-management-panel">
+                <h2>用户管理</h2>
+                <div class="toolbar">
+                    <button onclick="openUserEditModal(null)" class="btn-primary">新增用户</button>
+                    <button onclick="loadUsers()" class="btn-primary">刷新列表</button>
+                    <button onclick="openChangePasswordModal()" class="btn-primary">修改密码</button>
+                </div>
+                <div class="table-container" id="usersTableContainer">
+                    <table id="usersTable">
+                        <thead>
+                            <tr>
+                                <th>序号</th>
+                                <th>用户名</th>
+                                <th>真实姓名</th>
+                                <th>邮箱</th>
+                                <th>状态</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody">
+                            <tr>
+                                <td colspan="7" class="empty-message">暂无数据</td>
                             </tr>
                         </tbody>
                     </table>
@@ -319,6 +359,63 @@
                 <div class="form-group" style="text-align: right;">
                     <button onclick="closeQuotaEditModal()" class="btn-secondary" style="margin-right: 10px;">取消</button>
                     <button onclick="saveQuota()" class="btn-primary">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 用户编辑模态框 -->
+    <div id="userEditModal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <span class="close" onclick="closeUserEditModal()">&times;</span>
+            <h2 id="userEditModalTitle">新增用户</h2>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>用户名：<span style="color: red;">*</span></label>
+                    <input type="text" id="editUsername" placeholder="请输入用户名" required>
+                </div>
+                <div class="form-group" id="passwordGroup">
+                    <label>密码：<span style="color: red;">*</span></label>
+                    <input type="password" id="editPassword" placeholder="请输入密码（至少6位）" required>
+                </div>
+                <div class="form-group">
+                    <label>真实姓名：</label>
+                    <input type="text" id="editRealName" placeholder="请输入真实姓名">
+                </div>
+                <div class="form-group">
+                    <label>邮箱：</label>
+                    <input type="email" id="editEmail" placeholder="请输入邮箱">
+                </div>
+                <div class="form-group" style="text-align: right;">
+                    <button onclick="closeUserEditModal()" class="btn-secondary" style="margin-right: 10px;">取消</button>
+                    <button onclick="saveUser()" class="btn-primary">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 修改密码模态框 -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <span class="close" onclick="closeChangePasswordModal()">&times;</span>
+            <h2>修改密码</h2>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>原密码：<span style="color: red;">*</span></label>
+                    <input type="password" id="oldPassword" placeholder="请输入原密码" required>
+                </div>
+                <div class="form-group">
+                    <label>新密码：<span style="color: red;">*</span></label>
+                    <input type="password" id="newPassword" placeholder="请输入新密码（至少6位）" required>
+                </div>
+                <div class="form-group">
+                    <label>确认新密码：<span style="color: red;">*</span></label>
+                    <input type="password" id="confirmPassword" placeholder="请再次输入新密码" required>
+                </div>
+                <div class="error-message" id="passwordErrorMessage"></div>
+                <div class="form-group" style="text-align: right;">
+                    <button onclick="closeChangePasswordModal()" class="btn-secondary" style="margin-right: 10px;">取消</button>
+                    <button onclick="savePassword()" class="btn-primary">保存</button>
                 </div>
             </div>
         </div>
