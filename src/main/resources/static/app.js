@@ -178,16 +178,20 @@ async function importItems() {
 async function matchQuotas() {
     const statusSpan = document.getElementById('matchStatus');
     const versionSelect = document.getElementById('versionSelect');
-    const versionId = versionSelect.value || null;
+    const versionId = versionSelect.value;
+    
+    // 检查是否选择了版本
+    if (!versionId) {
+        statusSpan.textContent = '请先选择定额版本';
+        statusSpan.className = 'status-message status-error';
+        return;
+    }
     
     statusSpan.textContent = '匹配中...';
     statusSpan.className = 'status-message';
     
     try {
-        let url = API_BASE + '/match';
-        if (versionId) {
-            url += '?versionId=' + versionId;
-        }
+        const url = API_BASE + '/match?versionId=' + versionId;
         const response = await fetch(url, {
             method: 'POST'
         });
@@ -493,6 +497,14 @@ async function openEditModal(itemId, itemName) {
     document.getElementById('quotaSearchInput').value = '';
     document.getElementById('manualPrice').value = '';
     
+    // 同步版本选择：使用匹配界面的版本下拉框值
+    const versionSelect = document.getElementById('versionSelect');
+    if (versionSelect && versionSelect.value) {
+        currentVersionId = versionSelect.value;
+    } else {
+        currentVersionId = null;
+    }
+    
     // 加载已添加的定额
     await loadItemQuotas(itemId);
 }
@@ -501,6 +513,13 @@ function closeEditModal() {
     document.getElementById('editModal').style.display = 'none';
     currentEditItemId = null;
     currentItemQuotas = [];
+}
+
+// 确定按钮，关闭编辑匹配定额模态框
+function confirmEditModal() {
+    closeEditModal();
+    // 刷新列表以显示最新数据
+    loadItems();
 }
 
 function openItemEditModal(itemId) {
@@ -740,9 +759,13 @@ async function searchQuotas() {
     quotaList.innerHTML = '<p>搜索中...</p>';
     
     try {
+        // 使用匹配界面的版本下拉框值，与自动匹配保持一致
+        const versionSelect = document.getElementById('versionSelect');
+        const versionId = versionSelect ? versionSelect.value : null;
+        
         let url = API_BASE + '/quotas/search?keyword=' + encodeURIComponent(keyword);
-        if (currentVersionId) {
-            url += '&versionId=' + currentVersionId;
+        if (versionId) {
+            url += '&versionId=' + versionId;
         }
         const response = await fetch(url);
         const quotas = await response.json();
@@ -2142,8 +2165,16 @@ async function loadVersionOptions() {
         const versions = await response.json();
         const select = document.getElementById('versionSelect');
         if (select) {
-            select.innerHTML = '<option value="">全部版本</option>' + 
-                versions.map(v => `<option value="${v.id}">${v.versionName}</option>`).join('');
+            if (versions.length === 0) {
+                select.innerHTML = '<option value="">暂无版本</option>';
+            } else {
+                // 删除"全部版本"选项，只显示具体版本
+                select.innerHTML = versions.map(v => `<option value="${v.id}">${v.versionName}</option>`).join('');
+                // 默认选择第一个版本
+                if (versions.length > 0) {
+                    select.value = versions[0].id;
+                }
+            }
         }
     } catch (error) {
         console.error('加载版本选项失败：', error);

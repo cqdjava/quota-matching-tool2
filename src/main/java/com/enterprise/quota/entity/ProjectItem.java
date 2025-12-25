@@ -14,10 +14,10 @@ public class ProjectItem {
     @Column(name = "item_code", length = 100)
     private String itemCode;
     
-    @Column(name = "item_name", length = 500)
+    @Column(name = "item_name", columnDefinition = "LONGTEXT")
     private String itemName;
     
-    @Column(name = "feature_value", length = 1000)
+    @Column(name = "feature_value", columnDefinition = "LONGTEXT")
     private String featureValue;
     
     @Column(name = "unit", length = 50)
@@ -32,10 +32,10 @@ public class ProjectItem {
     @Column(name = "matched_quota_code", length = 100)
     private String matchedQuotaCode;
     
-    @Column(name = "matched_quota_name", length = 500)
+    @Column(name = "matched_quota_name", columnDefinition = "LONGTEXT")
     private String matchedQuotaName;
     
-    @Column(name = "matched_quota_feature_value", length = 1000)
+    @Column(name = "matched_quota_feature_value", columnDefinition = "LONGTEXT")
     private String matchedQuotaFeatureValue;
     
     @Column(name = "matched_unit_price", precision = 18, scale = 2)
@@ -47,7 +47,7 @@ public class ProjectItem {
     @Column(name = "match_status")
     private Integer matchStatus = 0;
     
-    @Column(name = "remark", length = 1000)
+    @Column(name = "remark", columnDefinition = "LONGTEXT")
     private String remark;
 
     public Long getId() { return id; }

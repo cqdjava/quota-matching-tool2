@@ -49,8 +49,8 @@
                 </div>
                 <div class="control-group">
                     <label for="versionSelect">定额版本：</label>
-                    <select id="versionSelect" style="padding: 6px; border: 2px solid #bbdefb; border-radius: 4px; min-width: 150px;">
-                        <option value="">全部版本</option>
+                    <select id="versionSelect" style="padding: 6px; border: 2px solid #bbdefb; border-radius: 4px; min-width: 150px;" required>
+                        <option value="">请选择版本</option>
                     </select>
                     <button onclick="matchQuotas()" class="btn-primary">开始匹配</button>
                     <span id="matchStatus"></span>
@@ -245,8 +245,9 @@
                     <button onclick="updatePrice()">更新单价</button>
                 </div>
                 
-                <div class="form-group">
-                    <button onclick="clearAllQuotas()" class="btn-danger" style="margin-top: 10px;">清空所有定额</button>
+                <div class="form-group" style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                    <button onclick="clearAllQuotas()" class="btn-danger">清空所有定额</button>
+                    <button onclick="confirmEditModal()" class="btn-primary">确定</button>
                 </div>
             </div>
         </div>

@@ -24,10 +24,10 @@ public class ProjectItemQuota {
     @Column(name = "quota_code", length = 100)
     private String quotaCode;
     
-    @Column(name = "quota_name", length = 500)
+    @Column(name = "quota_name", columnDefinition = "LONGTEXT")
     private String quotaName;
     
-    @Column(name = "quota_feature_value", length = 1000)
+    @Column(name = "quota_feature_value", columnDefinition = "LONGTEXT")
     private String quotaFeatureValue;
     
     @Column(name = "unit_price", precision = 18, scale = 2)

@@ -599,6 +599,12 @@ tbody tr:hover {
     backdrop-filter: blur(4px);
 }
 
+/* 编辑匹配定额模态框不模糊背景 */
+#editModal {
+    backdrop-filter: none;
+    background-color: rgba(0, 0, 0, 0.3);
+}
+
 .modal-content {
     background: linear-gradient(135deg, #ffffff 0%, #f5f7fa 100%);
     margin: 3% auto;

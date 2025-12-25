@@ -82,26 +82,55 @@ public class ExcelImportService {
     private String getCellValue(Cell cell) {
         if (cell == null) return "";
         
-        switch (cell.getCellType()) {
-            case STRING:
-                return cell.getStringCellValue().trim();
-            case NUMERIC:
-                if (DateUtil.isCellDateFormatted(cell)) {
-                    return cell.getDateCellValue().toString();
-                } else {
-                    double numericValue = cell.getNumericCellValue();
-                    if (numericValue == (long) numericValue) {
-                        return String.valueOf((long) numericValue);
+        try {
+            switch (cell.getCellType()) {
+                case STRING:
+                    return cell.getStringCellValue().trim();
+                case NUMERIC:
+                    if (DateUtil.isCellDateFormatted(cell)) {
+                        return cell.getDateCellValue().toString();
                     } else {
-                        return String.valueOf(numericValue);
+                        double numericValue = cell.getNumericCellValue();
+                        if (numericValue == (long) numericValue) {
+                            return String.valueOf((long) numericValue);
+                        } else {
+                            return String.valueOf(numericValue);
+                        }
                     }
-                }
-            case BOOLEAN:
-                return String.valueOf(cell.getBooleanCellValue());
-            case FORMULA:
-                return cell.getCellFormula();
-            default:
-                return "";
+                case BOOLEAN:
+                    return String.valueOf(cell.getBooleanCellValue());
+                case FORMULA:
+                    // 对于公式单元格，尝试获取计算后的值
+                    try {
+                        switch (cell.getCachedFormulaResultType()) {
+                            case STRING:
+                                return cell.getStringCellValue().trim();
+                            case NUMERIC:
+                                if (DateUtil.isCellDateFormatted(cell)) {
+                                    return cell.getDateCellValue().toString();
+                                } else {
+                                    double numericValue = cell.getNumericCellValue();
+                                    if (numericValue == (long) numericValue) {
+                                        return String.valueOf((long) numericValue);
+                                    } else {
+                                        return String.valueOf(numericValue);
+                                    }
+                                }
+                            case BOOLEAN:
+                                return String.valueOf(cell.getBooleanCellValue());
+                            default:
+                                return cell.getCellFormula();
+                        }
+                    } catch (Exception e) {
+                        // 如果获取公式值失败，返回公式本身
+                        return cell.getCellFormula();
+                    }
+                default:
+                    return "";
+            }
+        } catch (Exception e) {
+            // 处理任何异常，返回空字符串，避免导入失败
+            return "";
         }
     }
     

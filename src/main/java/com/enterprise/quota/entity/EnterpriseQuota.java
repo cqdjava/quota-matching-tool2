@@ -17,10 +17,10 @@ public class EnterpriseQuota {
     @Column(name = "quota_code", length = 100)
     private String quotaCode;
     
-    @Column(name = "quota_name", length = 500)
+    @Column(name = "quota_name", columnDefinition = "LONGTEXT")
     private String quotaName;
     
-    @Column(name = "feature_value", length = 1000)
+    @Column(name = "feature_value", columnDefinition = "LONGTEXT")
     private String featureValue;
     
     @Column(name = "unit", length = 50)
@@ -38,7 +38,7 @@ public class EnterpriseQuota {
     @Column(name = "machine_cost", precision = 18, scale = 2)
     private BigDecimal machineCost;
     
-    @Column(name = "remark", length = 1000)
+    @Column(name = "remark", columnDefinition = "LONGTEXT")
     private String remark;
     
     @Column(name = "version_id")

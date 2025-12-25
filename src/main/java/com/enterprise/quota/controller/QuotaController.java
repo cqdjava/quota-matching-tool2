@@ -11,6 +11,7 @@ import com.enterprise.quota.repository.QuotaVersionRepository;
 import com.enterprise.quota.service.ExcelExportService;
 import com.enterprise.quota.service.ExcelImportService;
 import com.enterprise.quota.service.QuotaMatchingService;
+import com.enterprise.quota.service.MatchingLearningService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -49,6 +50,9 @@ public class QuotaController {
     
     @Autowired
     private QuotaVersionRepository versionRepository;
+    
+    @Autowired
+    private MatchingLearningService learningService;
     
     @PostMapping("/import-quotas")
     public ResponseEntity<Map<String, Object>> importQuotas(
@@ -683,6 +687,43 @@ public class QuotaController {
         } catch (Exception e) {
             result.put("success", false);
             result.put("message", "批量删除失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 手动触发学习分析
+     */
+    @PostMapping("/learning/analyze")
+    public ResponseEntity<Map<String, Object>> triggerLearningAnalysis() {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            learningService.analyzeAndUpdateWeights();
+            learningService.discoverSynonyms();
+            result.put("success", true);
+            result.put("message", "学习分析完成");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "学习分析失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
+    }
+    
+    /**
+     * 收集所有历史匹配数据
+     */
+    @PostMapping("/learning/collect")
+    public ResponseEntity<Map<String, Object>> collectAllMatchData() {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            learningService.collectAllMatchData();
+            result.put("success", true);
+            result.put("message", "数据收集完成");
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("message", "数据收集失败：" + e.getMessage());
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
         }
     }
