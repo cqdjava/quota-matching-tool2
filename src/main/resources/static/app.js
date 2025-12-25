@@ -1484,6 +1484,8 @@ function filterQuotas() {
     });
 }
 
+// 注意：已移除自动调整列宽功能，现在内容会换行适应列宽
+
 // 初始化列宽调整功能（清单表格）
 function initResizableColumns() {
     const table = document.getElementById('itemsTable');
@@ -1551,6 +1553,9 @@ function initResizableColumns() {
 function initResizableQuotaColumns() {
     const table = document.getElementById('quotasTable');
     if (!table) return;
+    
+    // 先自动调整列宽
+    autoResizeColumns('quotasTable');
     
     const headers = table.querySelectorAll('thead th');
     

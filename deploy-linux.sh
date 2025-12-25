@@ -97,8 +97,21 @@ export SPRING_PROFILES_ACTIVE=prod
 # 设置日志路径
 export LOG_PATH=$LOG_DIR/application.log
 
-# 启动应用
-java -Xms512m -Xmx1024m -jar ${APP_NAME}.jar
+# 启动应用（4核4G服务器优化参数）
+java -Xms2g \
+     -Xmx3g \
+     -XX:+UseG1GC \
+     -XX:MaxGCPauseMillis=200 \
+     -XX:ParallelGCThreads=4 \
+     -XX:ConcGCThreads=2 \
+     -XX:+UseStringDeduplication \
+     -XX:+OptimizeStringConcat \
+     -XX:+UseCompressedOops \
+     -XX:+UseCompressedClassPointers \
+     -Djava.awt.headless=true \
+     -Dfile.encoding=UTF-8 \
+     -Duser.timezone=Asia/Shanghai \
+     -jar ${APP_NAME}.jar
 EOF
 
 $SUDO_CMD mv /tmp/start.sh $DEPLOY_DIR/start.sh
@@ -151,7 +164,7 @@ Type=simple
 User=$SERVICE_USER
 WorkingDirectory=$DEPLOY_DIR
 Environment="SPRING_PROFILES_ACTIVE=prod"
-Environment="JAVA_OPTS=-Xms512m -Xmx1024m"
+Environment="JAVA_OPTS=-Xms2g -Xmx3g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:ParallelGCThreads=4 -XX:ConcGCThreads=2 -XX:+UseStringDeduplication -XX:+OptimizeStringConcat -XX:+UseCompressedOops -XX:+UseCompressedClassPointers -Djava.awt.headless=true -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai"
 Environment="LOG_PATH=$LOG_DIR/application.log"
 # 数据库配置（根据实际情况修改）
 # Environment="DB_USERNAME=root"

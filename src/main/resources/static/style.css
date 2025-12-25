@@ -486,6 +486,10 @@ th.resizing .resizer {
 td {
     padding: 12px;
     border-bottom: 1px solid #e3f2fd;
+    white-space: normal;
+    word-wrap: break-word;
+    word-break: break-all;
+    vertical-align: top;
 }
 
 .editable-cell {
