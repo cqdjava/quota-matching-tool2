@@ -6,6 +6,7 @@
 
 body {
     font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif;
+    font-size: 14px;
     background: linear-gradient(135deg, #0a1929 0%, #1a237e 50%, #0d47a1 100%);
     margin: 0;
     padding: 0;
@@ -37,7 +38,7 @@ header {
 }
 
 header h1 {
-    font-size: 32px;
+    font-size: 30px;
     font-weight: 600;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
@@ -68,7 +69,7 @@ header h1 {
     cursor: pointer;
     transition: all 0.3s;
     color: #1976d2;
-    font-size: 15px;
+    font-size: 14px;
     border-left: 3px solid transparent;
 }
 
@@ -84,7 +85,7 @@ header h1 {
 
 .nav-icon {
     margin-right: 10px;
-    font-size: 18px;
+    font-size: 14px;
 }
 
 .nav-text {
@@ -152,23 +153,23 @@ header h1 {
     border: 2px solid #bbdefb;
     border-radius: 4px;
     background: white;
-    font-size: 13px;
+    font-size: 14px;
 }
 
 .control-group button {
     padding: 6px 14px;
-    font-size: 13px;
+    font-size: 14px;
 }
 
 .control-group span {
-    font-size: 12px;
+    font-size: 14px;
     padding: 0 8px;
 }
 
 .action-panel h2 {
     color: #1976d2;
     margin-bottom: 15px;
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 600;
 }
 
@@ -218,6 +219,11 @@ button {
     font-weight: 500;
     transition: all 0.3s;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 统一所有输入框和选择框的字体大小 */
+input, select, textarea {
+    font-size: 14px;
 }
 
 button:hover {
@@ -272,6 +278,23 @@ button:hover {
     max-height: 100%;
 }
 
+/* 文档生成界面全屏样式 */
+#documentTab {
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    margin: 0;
+    overflow-y: auto;
+}
+
+#documentTab .version-management-panel {
+    width: 100%;
+    height: 100%;
+    padding: 20px;
+    overflow-y: auto;
+    max-width: 100%;
+}
+
 /* 定额匹配系统的data-panel在整体滚动模式下 */
 #itemsTab .data-panel {
     flex: none;
@@ -285,7 +308,7 @@ button:hover {
 .data-panel h2, .quota-management-panel h2 {
     color: #1976d2;
     margin-bottom: 20px;
-    font-size: 22px;
+    font-size: 14px;
     font-weight: 600;
     flex-shrink: 0;
 }
@@ -312,13 +335,13 @@ button:hover {
 
 .total-label {
     font-weight: 600;
-    font-size: 16px;
+    font-size: 14px;
     color: #1976d2;
 }
 
 .total-amount {
     font-weight: 700;
-    font-size: 20px;
+    font-size: 14px;
     color: #0d47a1;
     min-width: 120px;
     text-align: right;
@@ -326,7 +349,7 @@ button:hover {
 
 .total-unit {
     font-weight: 500;
-    font-size: 16px;
+    font-size: 14px;
     color: #1976d2;
 }
 
@@ -511,7 +534,7 @@ td {
     opacity: 0;
     transition: opacity 0.2s;
     color: #1976d2;
-    font-size: 12px;
+    font-size: 14px;
 }
 
 .editable-cell:hover::after {
@@ -539,7 +562,7 @@ tbody tr:hover {
     display: inline-block;
     padding: 4px 12px;
     border-radius: 12px;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 500;
 }
 
@@ -580,7 +603,7 @@ tbody tr:hover {
     border: none;
     border-radius: 4px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
     margin-right: 4px;
     transition: all 0.2s;
 }
@@ -625,7 +648,7 @@ tbody tr:hover {
 .close {
     color: #90a4ae;
     float: right;
-    font-size: 32px;
+    font-size: 14px;
     font-weight: bold;
     cursor: pointer;
     transition: color 0.2s;
@@ -706,7 +729,7 @@ tbody tr:hover {
 
 .quota-item p {
     color: #546e7a;
-    font-size: 12px;
+    font-size: 14px;
     margin: 3px 0;
 }
 
@@ -714,7 +737,7 @@ tbody tr:hover {
     margin-left: 10px;
     padding: 6px 12px;
     border-radius: 6px;
-    font-size: 12px;
+    font-size: 14px;
     font-weight: 500;
 }
 
@@ -747,4 +770,61 @@ tbody tr:hover {
 .version-detail-header h2 {
     margin: 0;
     color: #1976d2;
+}
+
+/* 占位符行样式 */
+.placeholder-row {
+    transition: all 0.2s;
+}
+
+.placeholder-row:hover {
+    box-shadow: 0 2px 8px rgba(25, 118, 210, 0.1);
+    border-color: #1976d2 !important;
+}
+
+.placeholder-row input:focus {
+    outline: none;
+    border-color: #1976d2 !important;
+    box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+}
+
+#placeholdersContainer::-webkit-scrollbar {
+    width: 8px;
+}
+
+#placeholdersContainer::-webkit-scrollbar-track {
+    background: #f0f0f0;
+    border-radius: 4px;
+}
+
+#placeholdersContainer::-webkit-scrollbar-thumb {
+    background: #1976d2;
+    border-radius: 4px;
+}
+
+#placeholdersContainer::-webkit-scrollbar-thumb:hover {
+    background: #1565c0;
+}
+
+/* 可调整大小的容器样式 */
+#placeholdersContainer {
+    position: relative;
+}
+
+/* 调整大小手柄样式 */
+#placeholdersContainer::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 20px;
+    height: 20px;
+    background: linear-gradient(135deg, transparent 0%, transparent 40%, #1976d2 40%, #1976d2 45%, transparent 45%, transparent 55%, #1976d2 55%, #1976d2 60%, transparent 60%, transparent 100%);
+    cursor: nwse-resize;
+    z-index: 10;
+    pointer-events: none;
+}
+
+#placeholdersContainer:hover::after {
+    background: linear-gradient(135deg, transparent 0%, transparent 40%, #1565c0 40%, #1565c0 45%, transparent 45%, transparent 55%, #1565c0 55%, #1565c0 60%, transparent 60%, transparent 100%);
 }

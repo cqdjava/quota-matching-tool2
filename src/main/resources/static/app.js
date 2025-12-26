@@ -17,6 +17,8 @@ window.onload = function() {
         loadVersions();
         loadVersionOptions();
         loadUsers(); // 加载用户列表
+        loadDocumentTemplates(); // 加载文档模板列表
+        loadReplacementTemplates(); // 加载替换内容模板列表
         // 确保表格容器可以正常滚动
         ensureTableScrolling();
         
@@ -1050,11 +1052,16 @@ function switchNav(navName) {
         if (usersTab) {
             usersTab.classList.add('active');
             usersTab.style.display = 'flex';
-            document.querySelectorAll('.nav-item')[2].classList.add('active');
+            document.querySelectorAll('.nav-item')[3].classList.add('active');
             loadUsers();
         }
-        document.querySelectorAll('.nav-item')[1].classList.add('active');
-        loadVersions();
+    } else if (navName === 'document') {
+        document.getElementById('documentTab').classList.add('active');
+        document.getElementById('documentTab').style.display = 'flex';
+        document.querySelectorAll('.nav-item')[2].classList.add('active');
+        // 加载模板列表
+        loadDocumentTemplates();
+        loadReplacementTemplates();
     }
 }
 
@@ -2548,5 +2555,660 @@ async function savePassword() {
     } catch (error) {
         console.error('修改密码失败：', error);
         errorMessage.textContent = '修改密码失败：' + error.message;
+    }
+}
+
+// ==================== 文档生成模块 ====================
+
+// 生成文档
+// 添加占位符行
+function addPlaceholderRow() {
+    const container = document.getElementById('placeholdersContainer');
+    const row = document.createElement('div');
+    row.className = 'placeholder-row';
+    row.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #e0e0e0;';
+    row.innerHTML = `
+        <span style="color: #1976d2; font-weight: 500; white-space: nowrap;">\${</span>
+        <input type="text" class="placeholder-name" placeholder="占位符名称" style="flex: 1; padding: 8px; border: 1px solid #bbdefb; border-radius: 4px; font-size: 14px;">
+        <span style="color: #1976d2; font-weight: 500; white-space: nowrap;">}=</span>
+        <input type="text" class="placeholder-value" placeholder="替换内容" style="flex: 2; padding: 8px; border: 1px solid #bbdefb; border-radius: 4px; font-size: 14px;">
+        <button onclick="removePlaceholderRow(this)" class="btn-danger" style="padding: 6px 12px; font-size: 12px; min-width: 60px;">删除</button>
+    `;
+    container.appendChild(row);
+}
+
+// 删除占位符行
+function removePlaceholderRow(button) {
+    const row = button.closest('.placeholder-row');
+    if (row) {
+        row.remove();
+    }
+}
+
+// 从输入框收集替换内容并转换为文本格式
+function collectReplacements() {
+    const rows = document.querySelectorAll('.placeholder-row');
+    const replacements = [];
+    
+    rows.forEach(row => {
+        const nameInput = row.querySelector('.placeholder-name');
+        const valueInput = row.querySelector('.placeholder-value');
+        const name = nameInput ? nameInput.value.trim() : '';
+        const value = valueInput ? valueInput.value.trim() : '';
+        
+        if (name && value) {
+            replacements.push(`\${${name}}=${value}`);
+        }
+    });
+    
+    return replacements.join('\n');
+}
+
+async function generateDocument() {
+    const templateFile = document.getElementById('templateFile').files[0];
+    const replacementsText = collectReplacements();
+    const statusSpan = document.getElementById('documentStatus');
+
+    // 验证模板文件
+    if (!templateFile) {
+        statusSpan.textContent = '请选择模板文件';
+        statusSpan.style.color = '#f44336';
+        return;
+    }
+
+    // 验证替换内容
+    if (!replacementsText) {
+        statusSpan.textContent = '请至少添加一个占位符和替换内容';
+        statusSpan.style.color = '#f44336';
+        return;
+    }
+
+    statusSpan.textContent = '正在生成文档...';
+    statusSpan.style.color = '#2196F3';
+
+    try {
+        const formData = new FormData();
+        formData.append('template', templateFile);
+        formData.append('replacements', replacementsText);
+
+        const response = await fetch('/api/document/generate', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (response.ok) {
+            // 获取文件blob
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            
+            // 从响应头获取文件名，如果没有则使用默认名称
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let fileName = 'generated_document.docx';
+            if (contentDisposition) {
+                // 尝试多种格式解析文件名
+                let fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                if (fileNameMatch && fileNameMatch[1]) {
+                    fileName = fileNameMatch[1].replace(/['"]/g, ''); // 移除引号
+                } else {
+                    // 备用解析方式
+                    fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                    if (fileNameMatch && fileNameMatch[1]) {
+                        fileName = fileNameMatch[1];
+                    }
+                }
+            }
+            
+            // 确保文件名以.docx结尾
+            if (!fileName.toLowerCase().endsWith('.docx')) {
+                // 如果文件名不包含扩展名或扩展名不对，添加.docx
+                const nameWithoutExt = fileName.replace(/\.[^.]*$/, '');
+                fileName = nameWithoutExt + '.docx';
+            }
+            
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            statusSpan.textContent = '文档生成成功！';
+            statusSpan.style.color = '#4CAF50';
+        } else {
+            const result = await response.json();
+            statusSpan.textContent = result.message || '文档生成失败';
+            statusSpan.style.color = '#f44336';
+        }
+    } catch (error) {
+        console.error('生成文档失败：', error);
+        statusSpan.textContent = '生成文档失败：' + error.message;
+        statusSpan.style.color = '#f44336';
+    }
+}
+
+// 填充默认替换内容
+function fillDefaultReplacements() {
+    const defaultData = [
+        { name: '采购方式', value: '公开选择' },
+        { name: '评审办法', value: '综合评价法（价格分93分，商务分2分，技术分5分）' },
+        { name: '施工范围', value: '本项目2025年度通车路段劳务施工' },
+        { name: '项目名称', value: '仙居至庆元公路松阳县水南至枫坪段抽蓄影响改线工程第JD1标段机电施工' },
+        { name: '公开选择日期', value: '2025年09月' },
+        { name: '议题日期', value: '2025年09月26日' },
+        { name: '项目概况', value: '本项目起点接原仙居至庆元公路松阳县水南至枫坪段工程，起点桩号K13+686.586，终点与原仙居至庆元公路松阳县水南至枫坪段工程相接，终点桩号 K20+388.378，全长 6.702 公里，主要施工内容为项目实施范围内包括周岭根1号隧道、周岭根2号隧道的通信系统、监控系统、专用软件、通风、消防系统、供配电照明系统、防雷接地系统、管道工程等设施的设备安装、调试、施工等' },
+        { name: '建设地点', value: '浙江省松阳县' },
+        { name: '选择内容和范围', value: '项目施工图设计所含范围内的全部施工内容（详见工程量清单），包含设备安装及调试、基础制作及施工、封道费（不包含第三方封道措施费）、材料现场验收、转运、装卸、二次装运、吊装、保管及看护（通车前巡查）、电缆沟垃圾清理、辅材、维护修复、防腐、擦拭等工作、技术资料和税金等内容。特殊说明，安装内容中已经包括施工前期勘察、可能发生的垃圾清扫、渣土外运、电缆沟盖板揭盖（反复揭盖两次）、钢筋及混凝土试块检测费、设备单机及联网调试、安全文明措施及施工配合等内容，上述各类工作内容已经包括在响应报价总价中，不再单独计量' },
+        { name: '标段数', value: '1' },
+        { name: '标段1名称', value: '仙居至庆元公路松阳县水南至枫坪段抽蓄影响改线工程第JD1标段设备安装、调试等劳务施工工作' },
+        { name: '标段1金额', value: '151.13' },
+        { name: '控制价', value: '151.13' },
+        { name: '合同工期', value: '施工工期365个日历天，含试运行期180个日历天，缺陷责任期12个月，保修期12个月，LED灯5年' },
+        { name: '业绩起始时间', value: '2022年7月1日' },
+        { name: '完成业绩数量', value: '1' },
+        { name: '业绩', value: '120' },
+        { name: '允许中标数', value: '1' },
+        { name: '已完成项目数', value: '1' },
+        { name: '选择文件下载开始时间', value: '2025年10月09日09时30分' },
+        { name: '选择文件下载截至时间', value: '2025年10月14日9时30分' },
+        { name: '提交疑问截止日', value: '2025年10月15日9时30分' },
+        { name: '答疑截止日', value: '2025年10月16日9时30分' },
+        { name: '响应文件递交的截止时间', value: '2025年10月17日14时30分' },
+        { name: '联系人', value: '蔡工' },
+        { name: '类似项目', value: '公路机电工程劳务施工' },
+        { name: '保证金金额', value: '20000.00' }
+    ];
+
+    // 清空现有行
+    const container = document.getElementById('placeholdersContainer');
+    container.innerHTML = '';
+
+    // 添加默认数据行
+    defaultData.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'placeholder-row';
+        row.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #e0e0e0;';
+        row.innerHTML = `
+            <span style="color: #1976d2; font-weight: 500; white-space: nowrap;">\${</span>
+            <input type="text" class="placeholder-name" placeholder="占位符名称" value="${item.name}" style="flex: 1; padding: 8px; border: 1px solid #bbdefb; border-radius: 4px; font-size: 14px;">
+            <span style="color: #1976d2; font-weight: 500; white-space: nowrap;">}=</span>
+            <input type="text" class="placeholder-value" placeholder="替换内容" value="${item.value}" style="flex: 2; padding: 8px; border: 1px solid #bbdefb; border-radius: 4px; font-size: 14px;">
+            <button onclick="removePlaceholderRow(this)" class="btn-danger" style="padding: 6px 12px; font-size: 12px; min-width: 60px;">删除</button>
+        `;
+        container.appendChild(row);
+    });
+}
+
+// ==================== 模板管理功能 ====================
+
+// 加载文档模板列表
+async function loadDocumentTemplates() {
+    try {
+        const response = await fetch('/api/document/template/list');
+        if (response.ok) {
+            const templates = await response.json();
+            const select = document.getElementById('documentTemplateSelect');
+            select.innerHTML = '<option value="">请选择服务器模板</option>';
+            templates.forEach(template => {
+                const option = document.createElement('option');
+                option.value = template.id;
+                option.textContent = template.templateName + (template.description ? ' - ' + template.description : '');
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('加载文档模板失败：', error);
+    }
+}
+
+// 文档模板选择变化
+function onDocumentTemplateSelect() {
+    const select = document.getElementById('documentTemplateSelect');
+    const fileInput = document.getElementById('templateFile');
+    if (select.value) {
+        fileInput.value = ''; // 清空文件选择
+    }
+}
+
+// 打开文档模板管理模态框
+function openDocumentTemplateModal() {
+    document.getElementById('documentTemplateModal').style.display = 'block';
+    loadDocumentTemplateList();
+}
+
+// 关闭文档模板管理模态框
+function closeDocumentTemplateModal() {
+    document.getElementById('documentTemplateModal').style.display = 'none';
+}
+
+// 加载文档模板列表
+async function loadDocumentTemplateList() {
+    try {
+        const response = await fetch('/api/document/template/list');
+        if (response.ok) {
+            const templates = await response.json();
+            const tbody = document.getElementById('documentTemplateList');
+            if (templates.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" class="empty-message">暂无模板，请先上传</td></tr>';
+            } else {
+                tbody.innerHTML = templates.map(template => {
+                    const fileSize = template.fileSize ? (template.fileSize / 1024).toFixed(2) + ' KB' : '-';
+                    const createdAt = template.createdAt ? new Date(template.createdAt).toLocaleString('zh-CN') : '-';
+                    return `
+                        <tr>
+                            <td>${template.templateName}</td>
+                            <td>${template.fileName}</td>
+                            <td>${fileSize}</td>
+                            <td>${createdAt}</td>
+                            <td>
+                                <button onclick="selectDocumentTemplate(${template.id})" class="btn-primary" style="padding: 4px 8px; font-size: 12px; margin-right: 5px;">选择</button>
+                                <button onclick="deleteDocumentTemplate(${template.id})" class="btn-danger" style="padding: 4px 8px; font-size: 12px;">删除</button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+        }
+    } catch (error) {
+        console.error('加载文档模板列表失败：', error);
+    }
+}
+
+// 上传文档模板
+async function uploadDocumentTemplate() {
+    const templateName = document.getElementById('newDocumentTemplateName').value.trim();
+    const description = document.getElementById('newDocumentTemplateDescription').value.trim();
+    const fileInput = document.getElementById('newDocumentTemplateFile');
+    const file = fileInput.files[0];
+    
+    if (!templateName) {
+        alert('请输入模板名称');
+        return;
+    }
+    
+    if (!file) {
+        alert('请选择文件');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('templateName', templateName);
+    if (description) {
+        formData.append('description', description);
+    }
+    
+    try {
+        const response = await fetch('/api/document/template/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            alert('上传成功');
+            document.getElementById('newDocumentTemplateName').value = '';
+            document.getElementById('newDocumentTemplateDescription').value = '';
+            fileInput.value = '';
+            loadDocumentTemplateList();
+            loadDocumentTemplates();
+        } else {
+            alert('上传失败：' + result.message);
+        }
+    } catch (error) {
+        console.error('上传文档模板失败：', error);
+        alert('上传失败：' + error.message);
+    }
+}
+
+// 选择文档模板
+function selectDocumentTemplate(templateId) {
+    const select = document.getElementById('documentTemplateSelect');
+    select.value = templateId;
+    onDocumentTemplateSelect();
+    closeDocumentTemplateModal();
+}
+
+// 删除文档模板
+async function deleteDocumentTemplate(templateId) {
+    if (!confirm('确定要删除这个模板吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/document/template/${templateId}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            alert('删除成功');
+            loadDocumentTemplateList();
+            loadDocumentTemplates();
+        } else {
+            alert('删除失败：' + result.message);
+        }
+    } catch (error) {
+        console.error('删除文档模板失败：', error);
+        alert('删除失败：' + error.message);
+    }
+}
+
+// 加载替换内容模板列表
+async function loadReplacementTemplates() {
+    try {
+        const response = await fetch('/api/document/replacement-template/list');
+        if (response.ok) {
+            const templates = await response.json();
+            const select = document.getElementById('replacementTemplateSelect');
+            select.innerHTML = '<option value="">选择填充模板</option>';
+            templates.forEach(template => {
+                const option = document.createElement('option');
+                option.value = template.id;
+                option.textContent = template.templateName + (template.description ? ' - ' + template.description : '');
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('加载替换内容模板失败：', error);
+    }
+}
+
+// 替换内容模板选择变化
+function onReplacementTemplateSelect() {
+    const select = document.getElementById('replacementTemplateSelect');
+    const deleteBtn = document.getElementById('deleteReplacementTemplateBtn');
+    if (select.value) {
+        deleteBtn.style.display = 'inline-block';
+        loadReplacementTemplate();
+    } else {
+        deleteBtn.style.display = 'none';
+    }
+}
+
+// 加载替换内容模板
+async function loadReplacementTemplate() {
+    const select = document.getElementById('replacementTemplateSelect');
+    const templateId = select.value;
+    if (!templateId) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/document/replacement-template/${templateId}`);
+        if (response.ok) {
+            const template = await response.json();
+            // 解析replacements（JSON格式）
+            try {
+                const replacements = JSON.parse(template.replacements);
+                // 清空现有行
+                const container = document.getElementById('placeholdersContainer');
+                container.innerHTML = '';
+                
+                // 添加模板数据行
+                Object.keys(replacements).forEach(name => {
+                    const row = document.createElement('div');
+                    row.className = 'placeholder-row';
+                    row.style.cssText = 'display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #e0e0e0;';
+                    
+                    // 转义HTML特殊字符
+                    const escapedName = name.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    const escapedValue = replacements[name].replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+                    
+                    row.innerHTML = `
+                        <span style="color: #1976d2; font-weight: 500; white-space: nowrap;">\${</span>
+                        <input type="text" class="placeholder-name" placeholder="占位符名称" value="${escapedName}" style="flex: 1; padding: 8px; border: 1px solid #bbdefb; border-radius: 4px; font-size: 14px;">
+                        <span style="color: #1976d2; font-weight: 500; white-space: nowrap;">}=</span>
+                        <input type="text" class="placeholder-value" placeholder="替换内容" value="${escapedValue}" style="flex: 2; padding: 8px; border: 1px solid #bbdefb; border-radius: 4px; font-size: 14px;">
+                        <button onclick="removePlaceholderRow(this)" class="btn-danger" style="padding: 6px 12px; font-size: 12px; min-width: 60px;">删除</button>
+                    `;
+                    container.appendChild(row);
+                });
+            } catch (e) {
+                console.error('解析模板数据失败：', e);
+                alert('模板数据格式错误');
+            }
+        }
+    } catch (error) {
+        console.error('加载替换内容模板失败：', error);
+        alert('加载模板失败：' + error.message);
+    }
+}
+
+// 保存替换内容模板
+function saveReplacementTemplate() {
+    document.getElementById('saveReplacementTemplateModal').style.display = 'block';
+    document.getElementById('replacementTemplateName').value = '';
+    document.getElementById('replacementTemplateDescription').value = '';
+}
+
+// 关闭保存替换内容模板模态框
+function closeSaveReplacementTemplateModal() {
+    document.getElementById('saveReplacementTemplateModal').style.display = 'none';
+}
+
+// 确认保存替换内容模板
+async function confirmSaveReplacementTemplate() {
+    const templateName = document.getElementById('replacementTemplateName').value.trim();
+    const description = document.getElementById('replacementTemplateDescription').value.trim();
+    
+    if (!templateName) {
+        alert('请输入模板名称');
+        return;
+    }
+    
+    // 收集当前替换内容
+    const rows = document.querySelectorAll('.placeholder-row');
+    const replacements = {};
+    rows.forEach(row => {
+        const nameInput = row.querySelector('.placeholder-name');
+        const valueInput = row.querySelector('.placeholder-value');
+        const name = nameInput ? nameInput.value.trim() : '';
+        const value = valueInput ? valueInput.value.trim() : '';
+        if (name && value) {
+            replacements[name] = value;
+        }
+    });
+    
+    if (Object.keys(replacements).length === 0) {
+        alert('请至少添加一个占位符和替换内容');
+        return;
+    }
+    
+    const formData = new FormData();
+    formData.append('templateName', templateName);
+    formData.append('replacements', JSON.stringify(replacements));
+    if (description) {
+        formData.append('description', description);
+    }
+    
+    try {
+        const response = await fetch('/api/document/replacement-template/save', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            alert('保存成功');
+            closeSaveReplacementTemplateModal();
+            loadReplacementTemplates();
+        } else {
+            alert('保存失败：' + result.message);
+        }
+    } catch (error) {
+        console.error('保存替换内容模板失败：', error);
+        alert('保存失败：' + error.message);
+    }
+}
+
+// 修改generateDocument函数以支持服务器模板
+async function generateDocument() {
+    const templateFileInput = document.getElementById('templateFile');
+    const templateSelect = document.getElementById('documentTemplateSelect');
+    const templateId = templateSelect.value;
+    const templateFile = templateFileInput.files[0];
+    const replacementsText = collectReplacements();
+    const statusSpan = document.getElementById('documentStatus');
+
+    // 验证模板文件
+    if (!templateId && !templateFile) {
+        statusSpan.textContent = '请选择模板文件或从服务器选择模板';
+        statusSpan.style.color = '#f44336';
+        return;
+    }
+
+    // 验证替换内容
+    if (!replacementsText) {
+        statusSpan.textContent = '请至少添加一个占位符和替换内容';
+        statusSpan.style.color = '#f44336';
+        return;
+    }
+
+    statusSpan.textContent = '正在生成文档...';
+    statusSpan.style.color = '#2196F3';
+
+    try {
+        const formData = new FormData();
+        formData.append('replacements', replacementsText);
+        
+        let response;
+        if (templateId) {
+            // 使用服务器模板
+            formData.append('templateId', templateId);
+            response = await fetch('/api/document/generate-from-template', {
+                method: 'POST',
+                body: formData
+            });
+        } else {
+            // 使用上传的文件
+            formData.append('template', templateFile);
+            response = await fetch('/api/document/generate', {
+                method: 'POST',
+                body: formData
+            });
+        }
+
+        if (response.ok) {
+            // 获取文件blob
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            
+            // 从响应头获取文件名
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let fileName = 'generated_document.docx';
+            if (contentDisposition) {
+                let fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                if (fileNameMatch && fileNameMatch[1]) {
+                    fileName = fileNameMatch[1].replace(/['"]/g, '');
+                } else {
+                    fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
+                    if (fileNameMatch && fileNameMatch[1]) {
+                        fileName = fileNameMatch[1];
+                    }
+                }
+            }
+            
+            // 确保文件名以.docx结尾
+            if (!fileName.toLowerCase().endsWith('.docx')) {
+                const nameWithoutExt = fileName.replace(/\.[^.]*$/, '');
+                fileName = nameWithoutExt + '.docx';
+            }
+            
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            statusSpan.textContent = '文档生成成功！';
+            statusSpan.style.color = '#4CAF50';
+        } else {
+            const result = await response.json();
+            statusSpan.textContent = result.message || '文档生成失败';
+            statusSpan.style.color = '#f44336';
+        }
+    } catch (error) {
+        console.error('生成文档失败：', error);
+        statusSpan.textContent = '生成文档失败：' + error.message;
+        statusSpan.style.color = '#f44336';
+    }
+}
+
+// 确保文档生成函数在全局作用域
+if (typeof window !== 'undefined') {
+    window.generateDocument = generateDocument;
+    window.fillDefaultReplacements = fillDefaultReplacements;
+    window.addPlaceholderRow = addPlaceholderRow;
+    window.removePlaceholderRow = removePlaceholderRow;
+    window.loadDocumentTemplates = loadDocumentTemplates;
+    window.onDocumentTemplateSelect = onDocumentTemplateSelect;
+    window.openDocumentTemplateModal = openDocumentTemplateModal;
+    window.closeDocumentTemplateModal = closeDocumentTemplateModal;
+    window.uploadDocumentTemplate = uploadDocumentTemplate;
+    window.selectDocumentTemplate = selectDocumentTemplate;
+    window.deleteDocumentTemplate = deleteDocumentTemplate;
+    window.loadReplacementTemplates = loadReplacementTemplates;
+    window.loadReplacementTemplate = loadReplacementTemplate;
+    window.onReplacementTemplateSelect = onReplacementTemplateSelect;
+    window.deleteReplacementTemplate = deleteReplacementTemplate;
+    window.saveReplacementTemplate = saveReplacementTemplate;
+    window.closeSaveReplacementTemplateModal = closeSaveReplacementTemplateModal;
+    window.confirmSaveReplacementTemplate = confirmSaveReplacementTemplate;
+    window.updateTemplateFileLabel = updateTemplateFileLabel;
+}
+
+// 更新文件选择框标签
+function updateTemplateFileLabel() {
+    const fileInput = document.getElementById('templateFile');
+    const label = document.getElementById('templateFileLabel');
+    if (fileInput && label) {
+        if (fileInput.files && fileInput.files.length > 0) {
+            label.textContent = fileInput.files[0].name;
+            label.style.color = '#1976d2';
+        } else {
+            label.textContent = '请选择本地模板';
+            label.style.color = '#999';
+        }
+    }
+}
+
+// 删除替换内容模板
+async function deleteReplacementTemplate() {
+    const select = document.getElementById('replacementTemplateSelect');
+    const templateId = select.value;
+    if (!templateId) {
+        alert('请先选择要删除的模板');
+        return;
+    }
+    
+    if (!confirm('确定要删除这个模板吗？')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/document/replacement-template/${templateId}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        if (result.success) {
+            alert('删除成功');
+            select.value = '';
+            document.getElementById('deleteReplacementTemplateBtn').style.display = 'none';
+            loadReplacementTemplates();
+            // 清空当前填充的内容
+            const container = document.getElementById('placeholdersContainer');
+            container.innerHTML = '';
+            // 添加一个空行
+            addPlaceholderRow();
+        } else {
+            alert('删除失败：' + result.message);
+        }
+    } catch (error) {
+        console.error('删除替换内容模板失败：', error);
+        alert('删除失败：' + error.message);
     }
 }

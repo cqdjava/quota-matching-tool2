@@ -28,6 +28,10 @@
                     <span class="nav-icon">📚</span>
                     <span class="nav-text">定额管理</span>
                 </div>
+                <div class="nav-item" onclick="switchNav('document')">
+                    <span class="nav-icon">📄</span>
+                    <span class="nav-text">文档生成</span>
+                </div>
                 <div class="nav-item" onclick="switchNav('users')">
                     <span class="nav-icon">👥</span>
                     <span class="nav-text">用户管理</span>
@@ -43,13 +47,13 @@
             <div class="compact-controls">
                 <div class="control-group">
                     <label for="itemFile">数据导入：</label>
-                    <input type="file" id="itemFile" accept=".xlsx,.xls">
+                    <input type="file" id="itemFile" accept=".xlsx,.xls" style="font-size: 14px;">
                     <button onclick="importItems()" class="btn-primary">导入清单</button>
                     <span id="itemStatus"></span>
                 </div>
                 <div class="control-group">
                     <label for="versionSelect">定额版本：</label>
-                    <select id="versionSelect" style="padding: 6px; border: 2px solid #bbdefb; border-radius: 4px; min-width: 150px;" required>
+                    <select id="versionSelect" style="padding: 6px; border: 2px solid #bbdefb; border-radius: 4px; min-width: 150px; font-size: 14px;" required>
                         <option value="">请选择版本</option>
                     </select>
                     <button onclick="matchQuotas()" class="btn-primary">开始匹配</button>
@@ -208,6 +212,65 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 文档生成标签页 -->
+        <div id="documentTab" class="tab-content" style="padding: 0; margin: 0; width: 100%; height: 100%;">
+            <div class="version-management-panel" style="width: 100%; height: 100%; padding: 20px; overflow-y: auto;">
+                <h2>文档生成</h2>
+                <div style="padding: 20px; max-width: 100%; width: 100%;">
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <label style="font-weight: bold; margin: 0;">1. 选择模板文件：</label>
+                            <button onclick="openDocumentTemplateModal()" class="btn-secondary" style="padding: 6px 12px; font-size: 14px;">管理模板</button>
+                        </div>
+                        <div style="display: flex; gap: 10px; align-items: flex-start; flex-wrap: wrap;">
+                            <select id="documentTemplateSelect" style="padding: 8px; border: 2px solid #bbdefb; border-radius: 4px; min-width: 300px; font-size: 14px; box-sizing: border-box; height: 38px; line-height: 22px;" onchange="onDocumentTemplateSelect()">
+                                <option value="">请选择服务器模板</option>
+                            </select>
+                            <span style="color: #666; font-size: 14px; line-height: 38px;">或</span>
+                            <label for="templateFile" style="position: relative; flex: 1; min-width: 200px; display: block;">
+                                <input type="file" id="templateFile" accept=".docx,.doc" style="padding: 8px; padding-right: 100px; border: 2px solid #bbdefb; border-radius: 4px; width: 100%; font-size: 14px; cursor: pointer; color: transparent; box-sizing: border-box; height: 38px; line-height: 22px;" onchange="updateTemplateFileLabel()">
+                                <span id="templateFileLabel" style="position: absolute; left: 92px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #000; font-size: 14px; background: white; padding: 0 4px; max-width: calc(100% - 120px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">请选择本地模板</span>
+                            </label>
+                        </div>
+                        <p style="margin-top: 5px; color: #666; font-size: 14px;">支持从服务器选择模板或上传本地 .docx/.doc 文件</p>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <label style="font-weight: bold; margin: 0;">2. 输入替换内容：</label>
+                            <div style="display: flex; gap: 10px;">
+                                <select id="replacementTemplateSelect" style="padding: 6px 12px; border: 2px solid #bbdefb; border-radius: 4px; font-size: 14px;" onchange="onReplacementTemplateSelect()">
+                                    <option value="">选择填充模板</option>
+                                </select>
+                                <button onclick="deleteReplacementTemplate()" id="deleteReplacementTemplateBtn" class="btn-danger" style="padding: 6px 12px; font-size: 14px; display: none;">删除模板</button>
+                                <button onclick="saveReplacementTemplate()" class="btn-secondary" style="padding: 6px 12px; font-size: 14px;">保存为模板</button>
+                                <button onclick="addPlaceholderRow()" class="btn-primary" style="padding: 8px 16px; font-size: 14px;">+ 添加占位符</button>
+                            </div>
+                        </div>
+                        <div id="placeholdersContainer" style="border: 2px solid #bbdefb; border-radius: 4px; padding: 15px; background: #fafafa; height: 800px; overflow-y: auto; overflow-x: auto; resize: horizontal; min-width: 600px; max-width: 100%; width: 100%; display: block;">
+                            <div class="placeholder-row" style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; padding: 10px; background: white; border-radius: 4px; border: 1px solid #e0e0e0;">
+                                <span style="color: #1976d2; font-weight: 500; white-space: nowrap;">${</span>
+                                <input type="text" class="placeholder-name" placeholder="占位符名称" style="flex: 1; padding: 8px; border: 1px solid #bbdefb; border-radius: 4px; font-size: 14px;">
+                                <span style="color: #1976d2; font-weight: 500; white-space: nowrap;">}=</span>
+                                <input type="text" class="placeholder-value" placeholder="替换内容" style="flex: 2; padding: 8px; border: 1px solid #bbdefb; border-radius: 4px; font-size: 14px;">
+                                <button onclick="removePlaceholderRow(this)" class="btn-danger" style="padding: 6px 12px; font-size: 14px; min-width: 60px;">删除</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <button onclick="generateDocument()" class="btn-primary" style="padding: 12px 30px; font-size: 14px;">生成文档</button>
+                        <span id="documentStatus" style="margin-left: 15px; color: #666;"></span>
+                    </div>
+
+                    <div style="margin-top: 20px; padding: 15px; background: #f5f5f5; border-radius: 4px;">
+                        <p style="margin: 0 0 10px 0; color: #666; font-size: 14px;">提示：可以从下拉框选择已保存的填充模板，或点击"填充默认内容"快速填充常用占位符</p>
+                        <button onclick="fillDefaultReplacements()" class="btn-secondary" style="padding: 8px 15px;">填充默认内容</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -390,6 +453,76 @@
                 <div class="form-group" style="text-align: right;">
                     <button onclick="closeUserEditModal()" class="btn-secondary" style="margin-right: 10px;">取消</button>
                     <button onclick="saveUser()" class="btn-primary">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 保存替换内容模板模态框 -->
+    <div id="saveReplacementTemplateModal" class="modal">
+        <div class="modal-content" style="max-width: 500px;">
+            <span class="close" onclick="closeSaveReplacementTemplateModal()">&times;</span>
+            <h2>保存替换内容模板</h2>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>模板名称：<span style="color: red;">*</span></label>
+                    <input type="text" id="replacementTemplateName" placeholder="请输入模板名称" required>
+                </div>
+                <div class="form-group">
+                    <label>描述：</label>
+                    <textarea id="replacementTemplateDescription" rows="3" placeholder="请输入模板描述（可选）"></textarea>
+                </div>
+                <div class="form-group" style="text-align: right;">
+                    <button onclick="closeSaveReplacementTemplateModal()" class="btn-secondary" style="margin-right: 10px;">取消</button>
+                    <button onclick="confirmSaveReplacementTemplate()" class="btn-primary">保存</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 文档模板管理模态框 -->
+    <div id="documentTemplateModal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <span class="close" onclick="closeDocumentTemplateModal()">&times;</span>
+            <h2>文档模板管理</h2>
+            <div class="modal-body">
+                <div style="margin-bottom: 20px; padding: 15px; background: #f5f5f5; border-radius: 4px;">
+                    <h3 style="margin-top: 0; margin-bottom: 10px;">上传新模板</h3>
+                    <div class="form-group" style="margin-bottom: 10px;">
+                        <label>模板名称：<span style="color: red;">*</span></label>
+                        <input type="text" id="newDocumentTemplateName" placeholder="请输入模板名称" style="width: 100%; padding: 8px; border: 2px solid #bbdefb; border-radius: 4px;">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 10px;">
+                        <label>描述：</label>
+                        <textarea id="newDocumentTemplateDescription" rows="2" placeholder="请输入模板描述（可选）" style="width: 100%; padding: 8px; border: 2px solid #bbdefb; border-radius: 4px;"></textarea>
+                    </div>
+                    <div class="form-group" style="margin-bottom: 10px;">
+                        <label>选择文件：<span style="color: red;">*</span></label>
+                        <input type="file" id="newDocumentTemplateFile" accept=".docx,.doc" style="width: 100%; padding: 8px; border: 2px solid #bbdefb; border-radius: 4px;">
+                    </div>
+                    <button onclick="uploadDocumentTemplate()" class="btn-primary" style="padding: 8px 16px;">上传模板</button>
+                </div>
+                
+                <div>
+                    <h3 style="margin-top: 0; margin-bottom: 15px;">已上传的模板</h3>
+                    <div class="table-container" style="max-height: 400px;">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>模板名称</th>
+                                    <th>文件名</th>
+                                    <th>文件大小</th>
+                                    <th>上传时间</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="documentTemplateList">
+                                <tr>
+                                    <td colspan="5" class="empty-message">暂无模板，请先上传</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
