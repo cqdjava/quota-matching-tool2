@@ -9,10 +9,16 @@
 <body>
     <div class="container">
         <header>
-            <h1>企业定额管理系统</h1>
-            <div style="position: absolute; right: 30px; top: 50%; transform: translateY(-50%);">
-                <span id="userInfo" style="color: white; margin-right: 15px;"></span>
-                <button onclick="logout()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; color: white; cursor: pointer;">退出登录</button>
+            <h1>定额管理系统</h1>
+            <div class="top-nav">
+                <div class="top-nav-item active" onclick="switchNav('items')">定额匹配</div>
+                <div class="top-nav-item" onclick="switchNav('versions')">定额管理</div>
+                <div class="top-nav-item" onclick="switchNav('document')">文档生成</div>
+                <div class="top-nav-item" onclick="switchNav('users')">用户管理</div>
+            </div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <span id="userInfo" style="color: white; font-size: 14px;"></span>
+                <button onclick="logout()" style="padding: 8px 16px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 4px; color: white; cursor: pointer; font-size: 13px;">退出登录</button>
             </div>
         </header>
 

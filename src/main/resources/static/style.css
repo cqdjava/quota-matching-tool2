@@ -7,7 +7,7 @@
 body {
     font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif;
     font-size: 14px;
-    background: linear-gradient(135deg, #0a1929 0%, #1a237e 50%, #0d47a1 100%);
+    background: #0d47a1;
     margin: 0;
     padding: 0;
     width: 100vw;
@@ -28,19 +28,52 @@ body {
 }
 
 header {
-    background: linear-gradient(135deg, #1976d2 0%, #1565c0 50%, #0d47a1 100%);
+    background: linear-gradient(135deg, #1a237e 0%, #0d47a1 100%);
     color: white;
-    padding: 20px 30px;
-    text-align: center;
+    padding: 15px 30px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
     flex-shrink: 0;
     position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 40px;
 }
 
 header h1 {
-    font-size: 30px;
+    font-size: 20px;
     font-weight: 600;
     text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    margin: 0;
+    white-space: nowrap;
+}
+
+/* 顶部导航栏 */
+.top-nav {
+    display: flex;
+    gap: 5px;
+    flex: 1;
+}
+
+.top-nav-item {
+    padding: 10px 20px;
+    color: rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    transition: all 0.3s;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 4px;
+    white-space: nowrap;
+}
+
+.top-nav-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.top-nav-item.active {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
 }
 
 /* 主内容区域 */
@@ -51,15 +84,9 @@ header h1 {
     min-height: 0;
 }
 
-/* 左侧导航栏 */
+/* 左侧导航栏 - 隐藏 */
 .sidebar {
-    width: 200px;
-    background: #f5f7fa;
-    border-right: 2px solid #e0e7ef;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    padding: 20px 0;
+    display: none;
 }
 
 .nav-item {
@@ -122,9 +149,10 @@ header h1 {
 
 .action-panel {
     padding: 12px 20px;
-    background: #f5f7fa;
-    border-bottom: 2px solid #e0e7ef;
+    background: white;
+    border-bottom: 2px solid #90caf9;
     flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(13, 71, 161, 0.1);
 }
 
 .compact-controls {
@@ -143,15 +171,15 @@ header h1 {
 
 .control-group label {
     font-weight: 500;
-    color: #1976d2;
+    color: #0d47a1;
     font-size: 14px;
     white-space: nowrap;
 }
 
 .control-group input[type="file"] {
     padding: 6px;
-    border: 2px solid #bbdefb;
-    border-radius: 4px;
+    border: 2px solid #90caf9;
+    border-radius: 6px;
     background: white;
     font-size: 14px;
 }
@@ -167,7 +195,7 @@ header h1 {
 }
 
 .action-panel h2 {
-    color: #1976d2;
+    color: #0d47a1;
     margin-bottom: 15px;
     font-size: 14px;
     font-weight: 600;
@@ -178,8 +206,8 @@ header h1 {
     padding: 20px;
     background: white;
     border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(25, 118, 210, 0.1);
-    border-left: 4px solid #1976d2;
+    box-shadow: 0 2px 12px rgba(13, 71, 161, 0.15);
+    border-left: 4px solid #1565c0;
 }
 
 .match-export-buttons {
@@ -199,14 +227,14 @@ header h1 {
 .upload-group label {
     min-width: 200px;
     font-weight: 500;
-    color: #1976d2;
+    color: #0d47a1;
 }
 
 .upload-group input[type="file"] {
     flex: 1;
     padding: 8px;
-    border: 2px solid #bbdefb;
-    border-radius: 4px;
+    border: 2px solid #90caf9;
+    border-radius: 6px;
     background: white;
 }
 
@@ -232,7 +260,7 @@ button:hover {
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+    background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
     color: white;
 }
 
@@ -241,35 +269,36 @@ button:hover {
 }
 
 .btn-success {
-    background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);
+    background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
     color: white;
 }
 
 .btn-success:hover {
-    background: linear-gradient(135deg, #388e3c 0%, #2e7d32 100%);
+    background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
 }
 
 .btn-danger {
-    background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+    background: linear-gradient(135deg, #1565c0 0%, #1976d2 100%);
     color: white;
 }
 
 .btn-danger:hover {
-    background: linear-gradient(135deg, #d32f2f 0%, #c62828 100%);
+    background: linear-gradient(135deg, #0d47a1 0%, #1565c0 100%);
 }
 
 .btn-secondary {
-    background: #90caf9;
+    background: #bbdefb;
     color: #0d47a1;
+    font-weight: 600;
 }
 
 .btn-secondary:hover {
-    background: #64b5f6;
+    background: #90caf9;
 }
 
 .data-panel, .quota-management-panel, .version-management-panel, .version-detail-panel {
     padding: 20px 30px;
-    background: #ffffff;
+    background: #e3f2fd;
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -306,7 +335,7 @@ button:hover {
 }
 
 .data-panel h2, .quota-management-panel h2 {
-    color: #1976d2;
+    color: #0d47a1;
     margin-bottom: 20px;
     font-size: 14px;
     font-weight: 600;
@@ -327,7 +356,7 @@ button:hover {
     gap: 10px;
     padding: 12px 20px;
     background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-    border: 2px solid #1976d2;
+    border: 2px solid #1565c0;
     border-radius: 6px;
     margin-bottom: 15px;
     flex-shrink: 0;
@@ -336,7 +365,7 @@ button:hover {
 .total-label {
     font-weight: 600;
     font-size: 14px;
-    color: #1976d2;
+    color: #0d47a1;
 }
 
 .total-amount {
@@ -350,14 +379,14 @@ button:hover {
 .total-unit {
     font-weight: 500;
     font-size: 14px;
-    color: #1976d2;
+    color: #0d47a1;
 }
 
 .toolbar input {
     flex: 1;
     min-width: 200px;
     padding: 10px;
-    border: 2px solid #bbdefb;
+    border: 2px solid #90caf9;
     border-radius: 6px;
     font-size: 14px;
     transition: border-color 0.3s;
@@ -365,21 +394,21 @@ button:hover {
 
 .toolbar input:focus {
     outline: none;
-    border-color: #1976d2;
-    box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+    border-color: #0d47a1;
+    box-shadow: 0 0 0 3px rgba(13, 71, 161, 0.15);
 }
 
 .table-container {
     overflow-y: auto;
     overflow-x: auto;
-    border: 2px solid #bbdefb;
+    border: 2px solid #90caf9;
     border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(25, 118, 210, 0.1);
+    box-shadow: 0 2px 12px rgba(13, 71, 161, 0.15);
     flex: 1;
     min-height: 0;
     position: relative;
     scrollbar-width: thin;
-    scrollbar-color: #1976d2 #e3f2fd;
+    scrollbar-color: #1565c0 #e3f2fd;
     -webkit-overflow-scrolling: touch;
     max-height: 100%;
 }
@@ -459,7 +488,7 @@ table {
 }
 
 thead {
-    background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+    background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
     color: white;
     position: sticky;
     top: 0;
@@ -474,7 +503,7 @@ th {
     border-right: 1px solid rgba(255, 255, 255, 0.2);
     position: sticky;
     top: 0;
-    background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+    background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
     z-index: 10;
     user-select: none;
 }
@@ -533,7 +562,7 @@ td {
     transform: translateY(-50%);
     opacity: 0;
     transition: opacity 0.2s;
-    color: #1976d2;
+    color: #0d47a1;
     font-size: 14px;
 }
 
@@ -545,11 +574,11 @@ td {
     outline: none;
     font-size: inherit;
     font-family: inherit;
-    border: 2px solid #1976d2;
+    border: 2px solid #0d47a1;
 }
 
 tbody tr:hover {
-    background: #f5f7fa;
+    background: #bbdefb;
 }
 
 .empty-message {
@@ -567,18 +596,18 @@ tbody tr:hover {
 }
 
 .status-matched {
-    background: #c8e6c9;
-    color: #2e7d32;
+    background: #bbdefb;
+    color: #0d47a1;
 }
 
 .status-unmatched {
-    background: #ffcdd2;
-    color: #c62828;
+    background: #e3f2fd;
+    color: #1565c0;
 }
 
 .status-manual {
-    background: #fff9c4;
-    color: #f57f17;
+    background: #90caf9;
+    color: #0d47a1;
 }
 
 .status-multi {
@@ -598,10 +627,10 @@ tbody tr:hover {
 
 .action-btn {
     padding: 6px 12px;
-    background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+    background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
     color: white;
     border: none;
-    border-radius: 4px;
+    border-radius: 6px;
     cursor: pointer;
     font-size: 14px;
     margin-right: 4px;
@@ -609,9 +638,9 @@ tbody tr:hover {
 }
 
 .action-btn:hover {
-    background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+    background: linear-gradient(135deg, #0d47a1 0%, #01579b 100%);
     transform: translateY(-1px);
-    box-shadow: 0 2px 6px rgba(25, 118, 210, 0.3);
+    box-shadow: 0 2px 8px rgba(13, 71, 161, 0.4);
 }
 
 .modal {
@@ -633,7 +662,7 @@ tbody tr:hover {
 }
 
 .modal-content {
-    background: linear-gradient(135deg, #ffffff 0%, #f5f7fa 100%);
+    background: linear-gradient(135deg, #ffffff 0%, #e3f2fd 100%);
     margin: 3% auto;
     padding: 30px;
     border-radius: 12px;
@@ -641,8 +670,8 @@ tbody tr:hover {
     max-width: 900px;
     max-height: 85vh;
     overflow-y: auto;
-    box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
-    border: 2px solid #1976d2;
+    box-shadow: 0 12px 48px rgba(13, 71, 161, 0.5);
+    border: 2px solid #1565c0;
 }
 
 .close {
@@ -655,7 +684,7 @@ tbody tr:hover {
 }
 
 .close:hover {
-    color: #1976d2;
+    color: #0d47a1;
 }
 
 .modal-body {
@@ -670,13 +699,13 @@ tbody tr:hover {
     display: block;
     margin-bottom: 8px;
     font-weight: 500;
-    color: #1976d2;
+    color: #0d47a1;
 }
 
 .form-group input, .form-group textarea {
     width: 100%;
     padding: 10px;
-    border: 2px solid #bbdefb;
+    border: 2px solid #90caf9;
     border-radius: 6px;
     font-size: 14px;
     transition: border-color 0.3s;
@@ -684,8 +713,8 @@ tbody tr:hover {
 
 .form-group input:focus, .form-group textarea:focus {
     outline: none;
-    border-color: #1976d2;
-    box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+    border-color: #0d47a1;
+    box-shadow: 0 0 0 3px rgba(13, 71, 161, 0.15);
 }
 
 .form-row {
@@ -696,11 +725,11 @@ tbody tr:hover {
 .quota-list {
     max-height: 300px;
     overflow-y: auto;
-    border: 2px solid #bbdefb;
+    border: 2px solid #90caf9;
     border-radius: 6px;
     padding: 10px;
     margin-top: 10px;
-    background: #f5f7fa;
+    background: #e3f2fd;
 }
 
 .quota-item {
@@ -713,7 +742,7 @@ tbody tr:hover {
 }
 
 .quota-item:hover {
-    background: #e3f2fd;
+    background: #bbdefb;
     transform: translateX(4px);
 }
 
@@ -722,7 +751,7 @@ tbody tr:hover {
 }
 
 .quota-item h4 {
-    color: #1976d2;
+    color: #0d47a1;
     margin-bottom: 5px;
     font-weight: 600;
 }
@@ -742,21 +771,21 @@ tbody tr:hover {
 }
 
 .status-success {
-    background: #c8e6c9;
-    color: #2e7d32;
+    background: #bbdefb;
+    color: #0d47a1;
 }
 
 .status-error {
-    background: #ffcdd2;
-    color: #c62828;
+    background: #e3f2fd;
+    color: #1565c0;
 }
 
 .batch-actions {
     margin-top: 15px;
     padding: 15px;
-    background: #fff3e0;
+    background: #e3f2fd;
     border-radius: 6px;
-    border-left: 4px solid #ff9800;
+    border-left: 4px solid #1565c0;
 }
 
 .version-detail-header {
@@ -764,12 +793,12 @@ tbody tr:hover {
     align-items: center;
     margin-bottom: 20px;
     padding-bottom: 15px;
-    border-bottom: 2px solid #e0e7ef;
+    border-bottom: 2px solid #90caf9;
 }
 
 .version-detail-header h2 {
     margin: 0;
-    color: #1976d2;
+    color: #0d47a1;
 }
 
 /* 占位符行样式 */
@@ -778,14 +807,14 @@ tbody tr:hover {
 }
 
 .placeholder-row:hover {
-    box-shadow: 0 2px 8px rgba(25, 118, 210, 0.1);
-    border-color: #1976d2 !important;
+    box-shadow: 0 2px 8px rgba(13, 71, 161, 0.15);
+    border-color: #1565c0 !important;
 }
 
 .placeholder-row input:focus {
     outline: none;
-    border-color: #1976d2 !important;
-    box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.1);
+    border-color: #0d47a1 !important;
+    box-shadow: 0 0 0 2px rgba(13, 71, 161, 0.15);
 }
 
 #placeholdersContainer::-webkit-scrollbar {
@@ -798,12 +827,12 @@ tbody tr:hover {
 }
 
 #placeholdersContainer::-webkit-scrollbar-thumb {
-    background: #1976d2;
+    background: #1565c0;
     border-radius: 4px;
 }
 
 #placeholdersContainer::-webkit-scrollbar-thumb:hover {
-    background: #1565c0;
+    background: #0d47a1;
 }
 
 /* 可调整大小的容器样式 */
@@ -819,12 +848,12 @@ tbody tr:hover {
     right: 0;
     width: 20px;
     height: 20px;
-    background: linear-gradient(135deg, transparent 0%, transparent 40%, #1976d2 40%, #1976d2 45%, transparent 45%, transparent 55%, #1976d2 55%, #1976d2 60%, transparent 60%, transparent 100%);
+    background: linear-gradient(135deg, transparent 0%, transparent 40%, #1565c0 40%, #1565c0 45%, transparent 45%, transparent 55%, #1565c0 55%, #1565c0 60%, transparent 60%, transparent 100%);
     cursor: nwse-resize;
     z-index: 10;
     pointer-events: none;
 }
 
 #placeholdersContainer:hover::after {
-    background: linear-gradient(135deg, transparent 0%, transparent 40%, #1565c0 40%, #1565c0 45%, transparent 45%, transparent 55%, #1565c0 55%, #1565c0 60%, transparent 60%, transparent 100%);
+    background: linear-gradient(135deg, transparent 0%, transparent 40%, #0d47a1 40%, #0d47a1 45%, transparent 45%, transparent 55%, #0d47a1 55%, #0d47a1 60%, transparent 60%, transparent 100%);
 }

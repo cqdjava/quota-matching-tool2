@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户登录 - 企业定额管理系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif;
+            background: linear-gradient(135deg, #0a1929 0%, #1a237e 50%, #0d47a1 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .login-container {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .login-header h1 {
+            color: #1976d2;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .login-header p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #1976d2;
+            box-shadow: 0 0 0 3px rgba(25, 118, 210, 0.1);
+        }
+
+        .login-button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #1976d2 0%, #1565c0 100%);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-top: 10px;
+        }
+
+        .login-button:hover {
+            background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(25, 118, 210, 0.3);
+        }
+
+        .login-button:active {
+            transform: translateY(0);
+        }
+
+        .login-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .error-message {
+            color: #f44336;
+            font-size: 14px;
+            margin-top: 10px;
+            text-align: center;
+            min-height: 20px;
+        }
+
+        .default-info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e3f2fd;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #1976d2;
+        }
+
+        .default-info strong {
+            display: block;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <div class="login-header">
+            <h1>企业定额管理系统</h1>
+            <p>请登录以继续</p>
+        </div>
+
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <div class="form-group">
+                <label for="username">用户名</label>
+                <input type="text" id="username" name="username" required autofocus placeholder="请输入用户名">
+            </div>
+
+            <div class="form-group">
+                <label for="password">密码</label>
+                <input type="password" id="password" name="password" required placeholder="请输入密码">
+            </div>
+
+            <div class="error-message" id="errorMessage"></div>
+
+            <button type="submit" class="login-button" id="loginButton">登录</button>
+        </form>
+        
+        <div style="text-align: center; margin-top: 15px;">
+            <a href="javascript:void(0)" onclick="showRegisterForm()" style="color: #1976d2; text-decoration: none; font-size: 14px;">还没有账号？立即注册</a>
+        </div>
+        
+        <!-- 注册表单 -->
+        <form id="registerForm" onsubmit="handleRegister(event)" style="display: none; margin-top: 20px;">
+            <div class="form-group">
+                <label for="regUsername">用户名</label>
+                <input type="text" id="regUsername" name="regUsername" required placeholder="请输入用户名">
+            </div>
+
+            <div class="form-group">
+                <label for="regPassword">密码</label>
+                <input type="password" id="regPassword" name="regPassword" required placeholder="请输入密码（至少6位）">
+            </div>
+
+            <div class="form-group">
+                <label for="regRealName">真实姓名（可选）</label>
+                <input type="text" id="regRealName" name="regRealName" placeholder="请输入真实姓名">
+            </div>
+
+            <div class="form-group">
+                <label for="regEmail">邮箱（可选）</label>
+                <input type="email" id="regEmail" name="regEmail" placeholder="请输入邮箱">
+            </div>
+
+            <div class="error-message" id="registerErrorMessage"></div>
+
+            <button type="submit" class="login-button" id="registerButton">注册</button>
+            <button type="button" class="login-button" onclick="showLoginForm()" style="background: #666; margin-top: 10px;">返回登录</button>
+        </form>
+
+        <div class="default-info">
+            <strong>默认账号信息：</strong>
+            <div>用户名：admin</div>
+            <div>密码：admin123</div>
+        </div>
+    </div>
+
+    <script>
+        // 检查是否已登录
+        async function checkLogin() {
+            try {
+                const response = await fetch('/api/auth/check');
+                const result = await response.json();
+                if (result.loggedIn) {
+                    window.location.href = '/';
+                }
+            } catch (error) {
+                console.error('检查登录状态失败:', error);
+            }
+        }
+
+        // 处理登录
+        async function handleLogin(event) {
+            event.preventDefault();
+            
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const errorMessage = document.getElementById('errorMessage');
+            const loginButton = document.getElementById('loginButton');
+            
+            if (!username || !password) {
+                errorMessage.textContent = '请输入用户名和密码';
+                return;
+            }
+            
+            errorMessage.textContent = '';
+            loginButton.disabled = true;
+            loginButton.textContent = '登录中...';
+            
+            try {
+                const formData = new URLSearchParams();
+                formData.append('username', username);
+                formData.append('password', password);
+                
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData.toString()
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    // 登录成功，跳转到主页
+                    window.location.href = '/';
+                } else {
+                    errorMessage.textContent = result.message || '登录失败，请检查用户名和密码';
+                    loginButton.disabled = false;
+                    loginButton.textContent = '登录';
+                }
+            } catch (error) {
+                errorMessage.textContent = '登录失败：' + error.message;
+                loginButton.disabled = false;
+                loginButton.textContent = '登录';
+            }
+        }
+        
+        // 显示注册表单
+        function showRegisterForm() {
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('registerForm').style.display = 'block';
+            document.getElementById('errorMessage').textContent = '';
+            document.getElementById('registerErrorMessage').textContent = '';
+        }
+        
+        // 显示登录表单
+        function showLoginForm() {
+            document.getElementById('registerForm').style.display = 'none';
+            document.getElementById('loginForm').style.display = 'block';
+            document.getElementById('errorMessage').textContent = '';
+            document.getElementById('registerErrorMessage').textContent = '';
+        }
+        
+        // 处理注册
+        async function handleRegister(event) {
+            event.preventDefault();
+            
+            const username = document.getElementById('regUsername').value.trim();
+            const password = document.getElementById('regPassword').value;
+            const realName = document.getElementById('regRealName').value.trim();
+            const email = document.getElementById('regEmail').value.trim();
+            const errorMessage = document.getElementById('registerErrorMessage');
+            const registerButton = document.getElementById('registerButton');
+            
+            if (!username || !password) {
+                errorMessage.textContent = '请输入用户名和密码';
+                return;
+            }
+            
+            if (password.length < 6) {
+                errorMessage.textContent = '密码长度不能少于6位';
+                return;
+            }
+            
+            errorMessage.textContent = '';
+            registerButton.disabled = true;
+            registerButton.textContent = '注册中...';
+            
+            try {
+                const formData = new URLSearchParams();
+                formData.append('username', username);
+                formData.append('password', password);
+                if (realName) formData.append('realName', realName);
+                if (email) formData.append('email', email);
+                
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: formData.toString()
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    alert('注册成功！请登录');
+                    showLoginForm();
+                    document.getElementById('username').value = username;
+                } else {
+                    errorMessage.textContent = result.message || '注册失败';
+                    registerButton.disabled = false;
+                    registerButton.textContent = '注册';
+                }
+            } catch (error) {
+                errorMessage.textContent = '注册失败：' + error.message;
+                registerButton.disabled = false;
+                registerButton.textContent = '注册';
+            }
+        }
+        
+        // 页面加载时检查登录状态
+        checkLogin();
+    </script>
+</body>
+</html>
+

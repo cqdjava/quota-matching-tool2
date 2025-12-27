@@ -1035,30 +1035,37 @@ function switchNav(navName) {
     document.querySelectorAll('.nav-item').forEach(item => {
         item.classList.remove('active');
     });
+    document.querySelectorAll('.top-nav-item').forEach(item => {
+        item.classList.remove('active');
+    });
     
     // 显示选中的导航页
     if (navName === 'items') {
         document.getElementById('itemsTab').classList.add('active');
         document.getElementById('itemsTab').style.display = 'flex';
-        document.querySelectorAll('.nav-item')[0].classList.add('active');
+        document.querySelectorAll('.nav-item')[0]?.classList.add('active');
+        document.querySelectorAll('.top-nav-item')[0]?.classList.add('active');
         loadItems();
     } else if (navName === 'versions') {
         document.getElementById('versionsTab').classList.add('active');
         document.getElementById('versionsTab').style.display = 'flex';
-        document.querySelectorAll('.nav-item')[1].classList.add('active');
+        document.querySelectorAll('.nav-item')[1]?.classList.add('active');
+        document.querySelectorAll('.top-nav-item')[1]?.classList.add('active');
         loadVersions();
     } else if (navName === 'users') {
         const usersTab = document.getElementById('usersTab');
         if (usersTab) {
             usersTab.classList.add('active');
             usersTab.style.display = 'flex';
-            document.querySelectorAll('.nav-item')[3].classList.add('active');
+            document.querySelectorAll('.nav-item')[3]?.classList.add('active');
+            document.querySelectorAll('.top-nav-item')[3]?.classList.add('active');
             loadUsers();
         }
     } else if (navName === 'document') {
         document.getElementById('documentTab').classList.add('active');
         document.getElementById('documentTab').style.display = 'flex';
-        document.querySelectorAll('.nav-item')[2].classList.add('active');
+        document.querySelectorAll('.nav-item')[2]?.classList.add('active');
+        document.querySelectorAll('.top-nav-item')[2]?.classList.add('active');
         // 加载模板列表
         loadDocumentTemplates();
         loadReplacementTemplates();

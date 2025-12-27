@@ -11,6 +11,9 @@ public class ProjectItem {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
     
+    @Column(name = "user_id")
+    private Long userId;
+    
     @Column(name = "item_code", length = 100)
     private String itemCode;
     
@@ -50,6 +53,8 @@ public class ProjectItem {
     @Column(name = "remark", columnDefinition = "LONGTEXT")
     private String remark;
 
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public String getItemCode() { return itemCode; }
