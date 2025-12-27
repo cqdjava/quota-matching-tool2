@@ -21,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import javax.servlet.http.HttpSession;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
@@ -74,10 +75,21 @@ public class QuotaController {
     }
     
     @PostMapping("/import-items")
-    public ResponseEntity<Map<String, Object>> importItems(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<Map<String, Object>> importItems(@RequestParam("file") MultipartFile file, HttpSession session) {
         Map<String, Object> result = new HashMap<>();
         try {
+            Long userId = (Long) session.getAttribute("userId");
+            if (userId == null) {
+                result.put("success", false);
+                result.put("message", "请先登录");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+            
             List<ProjectItem> items = importService.importProjectItems(file);
+            // 为导入的项目清单设置用户ID
+            for (ProjectItem item : items) {
+                item.setUserId(userId);
+            }
             itemRepository.saveAll(items);
             result.put("success", true);
             result.put("message", "导入成功，共导入 " + items.size() + " 条项目清单数据");
@@ -92,10 +104,17 @@ public class QuotaController {
     
     @PostMapping("/match")
     public ResponseEntity<Map<String, Object>> matchQuotas(
-            @RequestParam(value = "versionId", required = false) Long versionId) {
+            @RequestParam(value = "versionId", required = false) Long versionId, HttpSession session) {
         Map<String, Object> result = new HashMap<>();
         try {
-            int matchedCount = matchingService.batchMatchQuotas(versionId);
+            Long userId = (Long) session.getAttribute("userId");
+            if (userId == null) {
+                result.put("success", false);
+                result.put("message", "请先登录");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+            
+            int matchedCount = matchingService.batchMatchQuotasForUser(userId, versionId);
             result.put("success", true);
             result.put("message", "匹配完成，共匹配 " + matchedCount + " 条项目清单");
             result.put("matchedCount", matchedCount);
@@ -108,23 +127,38 @@ public class QuotaController {
     }
     
     @GetMapping("/items")
-    public ResponseEntity<List<ProjectItem>> getAllItems() {
-        return ResponseEntity.ok(itemRepository.findAll());
+    public ResponseEntity<List<ProjectItem>> getAllItems(HttpSession session) {
+        Long userId = (Long) session.getAttribute("userId");
+        if (userId == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+        
+        // 只返回当前用户的项目清单
+        List<ProjectItem> items = itemRepository.findByUserId(userId);
+        return ResponseEntity.ok(items);
     }
     
     /**
      * 新增项目清单（基础信息）
      */
     @PostMapping("/items")
-    public ResponseEntity<Map<String, Object>> createItem(@RequestBody ProjectItem request) {
+    public ResponseEntity<Map<String, Object>> createItem(@RequestBody ProjectItem request, HttpSession session) {
         Map<String, Object> result = new HashMap<>();
         try {
+            Long userId = (Long) session.getAttribute("userId");
+            if (userId == null) {
+                result.put("success", false);
+                result.put("message", "请先登录");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+            
             ProjectItem item = new ProjectItem();
             item.setItemCode(request.getItemCode());
             item.setItemName(request.getItemName());
             item.setFeatureValue(request.getFeatureValue());
             item.setUnit(request.getUnit());
             item.setQuantity(request.getQuantity());
+            item.setUserId(userId); // 设置用户ID
             
             // 新增清单默认未匹配
             item.setMatchStatus(0);
@@ -152,11 +186,25 @@ public class QuotaController {
      */
     @PutMapping("/items/{itemId}")
     public ResponseEntity<Map<String, Object>> updateItem(
-            @PathVariable Long itemId, @RequestBody Map<String, Object> updates) {
+            @PathVariable Long itemId, @RequestBody Map<String, Object> updates, HttpSession session) {
         Map<String, Object> result = new HashMap<>();
         try {
+            Long userId = (Long) session.getAttribute("userId");
+            if (userId == null) {
+                result.put("success", false);
+                result.put("message", "请先登录");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+            
             ProjectItem item = itemRepository.findById(itemId)
                     .orElseThrow(() -> new RuntimeException("项目清单不存在"));
+            
+            // 验证用户是否有权限编辑此项目清单
+            if (!item.getUserId().equals(userId)) {
+                result.put("success", false);
+                result.put("message", "无权限编辑此项目清单");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
+            }
             
             // 只更新传入的字段（支持部分更新）
             if (updates.containsKey("itemCode")) {
@@ -215,9 +263,26 @@ public class QuotaController {
      */
     @DeleteMapping("/items/{itemId}")
     @Transactional
-    public ResponseEntity<Map<String, Object>> deleteItem(@PathVariable Long itemId) {
+    public ResponseEntity<Map<String, Object>> deleteItem(@PathVariable Long itemId, HttpSession session) {
         Map<String, Object> result = new HashMap<>();
         try {
+            Long userId = (Long) session.getAttribute("userId");
+            if (userId == null) {
+                result.put("success", false);
+                result.put("message", "请先登录");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+            
+            ProjectItem item = itemRepository.findById(itemId)
+                    .orElseThrow(() -> new RuntimeException("项目清单不存在"));
+            
+            // 验证用户是否有权限删除此项目清单
+            if (!item.getUserId().equals(userId)) {
+                result.put("success", false);
+                result.put("message", "无权限删除此项目清单");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
+            }
+            
             if (!itemRepository.existsById(itemId)) {
                 result.put("success", false);
                 result.put("message", "项目清单不存在");
@@ -267,9 +332,26 @@ public class QuotaController {
     
     @PutMapping("/items/{itemId}/match")
     public ResponseEntity<Map<String, Object>> updateMatchedQuota(
-            @PathVariable Long itemId, @RequestParam Long quotaId) {
+            @PathVariable Long itemId, @RequestParam Long quotaId, HttpSession session) {
         Map<String, Object> result = new HashMap<>();
         try {
+            Long userId = (Long) session.getAttribute("userId");
+            if (userId == null) {
+                result.put("success", false);
+                result.put("message", "请先登录");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+            
+            ProjectItem item = itemRepository.findById(itemId)
+                    .orElseThrow(() -> new RuntimeException("项目清单不存在"));
+            
+            // 验证用户是否有权限编辑此项目清单
+            if (!item.getUserId().equals(userId)) {
+                result.put("success", false);
+                result.put("message", "无权限编辑此项目清单");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
+            }
+            
             matchingService.updateMatchedQuota(itemId, quotaId);
             result.put("success", true);
             result.put("message", "更新成功");
@@ -283,9 +365,26 @@ public class QuotaController {
     
     @PutMapping("/items/{itemId}/price")
     public ResponseEntity<Map<String, Object>> updateItemPrice(
-            @PathVariable Long itemId, @RequestParam BigDecimal unitPrice) {
+            @PathVariable Long itemId, @RequestParam BigDecimal unitPrice, HttpSession session) {
         Map<String, Object> result = new HashMap<>();
         try {
+            Long userId = (Long) session.getAttribute("userId");
+            if (userId == null) {
+                result.put("success", false);
+                result.put("message", "请先登录");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+            
+            ProjectItem item = itemRepository.findById(itemId)
+                    .orElseThrow(() -> new RuntimeException("项目清单不存在"));
+            
+            // 验证用户是否有权限编辑此项目清单
+            if (!item.getUserId().equals(userId)) {
+                result.put("success", false);
+                result.put("message", "无权限编辑此项目清单");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
+            }
+            
             matchingService.updateItemPrice(itemId, unitPrice);
             result.put("success", true);
             result.put("message", "更新成功");
@@ -332,9 +431,26 @@ public class QuotaController {
      */
     @PostMapping("/items/{itemId}/quotas/{quotaId}")
     public ResponseEntity<Map<String, Object>> addQuotaToItem(
-            @PathVariable Long itemId, @PathVariable Long quotaId) {
+            @PathVariable Long itemId, @PathVariable Long quotaId, HttpSession session) {
         Map<String, Object> result = new HashMap<>();
         try {
+            Long userId = (Long) session.getAttribute("userId");
+            if (userId == null) {
+                result.put("success", false);
+                result.put("message", "请先登录");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+            
+            ProjectItem item = itemRepository.findById(itemId)
+                    .orElseThrow(() -> new RuntimeException("项目清单不存在"));
+            
+            // 验证用户是否有权限编辑此项目清单
+            if (!item.getUserId().equals(userId)) {
+                result.put("success", false);
+                result.put("message", "无权限编辑此项目清单");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
+            }
+            
             matchingService.addQuotaToItem(itemId, quotaId);
             result.put("success", true);
             result.put("message", "添加成功");
@@ -359,9 +475,26 @@ public class QuotaController {
      */
     @DeleteMapping("/items/{itemId}/quotas/{itemQuotaId}")
     public ResponseEntity<Map<String, Object>> removeQuotaFromItem(
-            @PathVariable Long itemId, @PathVariable Long itemQuotaId) {
+            @PathVariable Long itemId, @PathVariable Long itemQuotaId, HttpSession session) {
         Map<String, Object> result = new HashMap<>();
         try {
+            Long userId = (Long) session.getAttribute("userId");
+            if (userId == null) {
+                result.put("success", false);
+                result.put("message", "请先登录");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+            
+            ProjectItem item = itemRepository.findById(itemId)
+                    .orElseThrow(() -> new RuntimeException("项目清单不存在"));
+            
+            // 验证用户是否有权限编辑此项目清单
+            if (!item.getUserId().equals(userId)) {
+                result.put("success", false);
+                result.put("message", "无权限编辑此项目清单");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
+            }
+            
             matchingService.removeQuotaFromItem(itemId, itemQuotaId);
             result.put("success", true);
             result.put("message", "移除成功");
@@ -377,9 +510,26 @@ public class QuotaController {
      * 清空清单项的所有定额关联
      */
     @DeleteMapping("/items/{itemId}/quotas")
-    public ResponseEntity<Map<String, Object>> clearItemQuotas(@PathVariable Long itemId) {
+    public ResponseEntity<Map<String, Object>> clearItemQuotas(@PathVariable Long itemId, HttpSession session) {
         Map<String, Object> result = new HashMap<>();
         try {
+            Long userId = (Long) session.getAttribute("userId");
+            if (userId == null) {
+                result.put("success", false);
+                result.put("message", "请先登录");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+            
+            ProjectItem item = itemRepository.findById(itemId)
+                    .orElseThrow(() -> new RuntimeException("项目清单不存在"));
+            
+            // 验证用户是否有权限编辑此项目清单
+            if (!item.getUserId().equals(userId)) {
+                result.put("success", false);
+                result.put("message", "无权限编辑此项目清单");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).body(result);
+            }
+            
             matchingService.clearItemQuotas(itemId);
             result.put("success", true);
             result.put("message", "清空成功");

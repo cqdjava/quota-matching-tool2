@@ -29,6 +29,9 @@ public class User {
     @Column(name = "status")
     private Integer status = 1; // 1-启用，0-禁用
     
+    @Column(name = "role", length = 20)
+    private String role = "user"; // user-普通用户，admin-管理员
+    
     @Column(name = "create_time")
     private LocalDateTime createTime;
     
@@ -59,6 +62,8 @@ public class User {
     public void setEmail(String email) { this.email = email; }
     public Integer getStatus() { return status; }
     public void setStatus(Integer status) { this.status = status; }
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
     public LocalDateTime getCreateTime() { return createTime; }
     public void setCreateTime(LocalDateTime createTime) { this.createTime = createTime; }
     public LocalDateTime getUpdateTime() { return updateTime; }

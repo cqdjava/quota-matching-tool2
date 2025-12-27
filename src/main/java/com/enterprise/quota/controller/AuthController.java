@@ -77,6 +77,7 @@ public class AuthController {
                 userInfo.put("id", user.getId());
                 userInfo.put("username", user.getUsername());
                 userInfo.put("realName", user.getRealName() != null ? user.getRealName() : user.getUsername());
+                userInfo.put("role", user.getRole() != null ? user.getRole() : "user"); // 添加角色信息
                 
                 result.put("success", true);
                 result.put("user", userInfo);

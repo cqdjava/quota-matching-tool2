@@ -16,6 +16,7 @@ window.onload = function() {
         loadItems();
         loadVersions();
         loadVersionOptions();
+        checkCurrentUserRole(); // 检查当前用户角色
         loadUsers(); // 加载用户列表
         loadDocumentTemplates(); // 加载文档模板列表
         loadReplacementTemplates(); // 加载替换内容模板列表
@@ -2270,10 +2271,62 @@ if (typeof window !== 'undefined') {
 // ==================== 用户管理相关函数 ====================
 
 let currentEditUserId = null;
+let currentUserRole = null; // 当前用户角色
+
+// 获取当前用户信息并检查角色
+async function checkCurrentUserRole() {
+    try {
+        const response = await fetch('/api/auth/current');
+        const result = await response.json();
+        
+        if (result.success) {
+            currentUserRole = result.user.role || 'user';
+            window.currentUserId = result.user.id; // 保存当前用户ID
+            // 根据角色控制界面元素
+            controlUserInterfaceByRole();
+        }
+    } catch (error) {
+        console.error('获取用户信息失败：', error);
+    }
+}
+
+// 根据用户角色控制界面元素
+function controlUserInterfaceByRole() {
+    // 控制用户管理页面的显示 - 所有用户都可以看到用户管理（但功能不同）
+    const userManagementNav = document.querySelector('.nav-item[onclick*="switchNav(\'users\')"]');
+    if (userManagementNav) {
+        userManagementNav.style.display = 'flex'; // 所有用户都可以看到用户管理
+    }
+    
+    // 控制用户管理页面的按钮
+    const addNewUserBtn = document.querySelector('#usersTab .toolbar .btn-primary[onclick*="openUserEditModal"]');
+    if (addNewUserBtn) {
+        if (currentUserRole === 'admin') {
+            addNewUserBtn.style.display = 'inline-block';
+        } else {
+            addNewUserBtn.style.display = 'none'; // 普通用户看不到新增用户按钮
+        }
+    }
+    
+    // 控制刷新列表按钮 - 所有用户都可以刷新
+    const refreshBtn = document.querySelector('#usersTab .toolbar .btn-primary[onclick*="loadUsers"]');
+    if (refreshBtn) {
+        refreshBtn.style.display = 'inline-block';
+    }
+    
+    // 控制修改密码按钮 - 所有用户都可以修改密码
+    const changePasswordBtn = document.querySelector('#usersTab .toolbar .btn-primary[onclick*="openChangePasswordModal"]');
+    if (changePasswordBtn) {
+        changePasswordBtn.style.display = 'inline-block';
+    }
+}
 
 // 加载用户列表
 async function loadUsers() {
     try {
+        // 确保用户角色已加载
+        await checkCurrentUserRole();
+        
         const response = await fetch('/api/user/list');
         const result = await response.json();
         
@@ -2287,6 +2340,8 @@ async function loadUsers() {
         alert('加载用户列表失败：' + error.message);
     }
 }
+
+
 
 // 渲染用户表格
 function renderUsersTable(users) {
@@ -2303,6 +2358,22 @@ function renderUsersTable(users) {
         const statusText = user.status === 1 ? '启用' : '禁用';
         const createTime = user.createTime ? new Date(user.createTime).toLocaleString('zh-CN') : '';
         
+        // 根据当前用户角色和被显示用户的角色来决定操作按钮
+        let actionButtons = '';
+        if (currentUserRole === 'admin') {
+            // 管理员可以看到所有操作按钮
+            actionButtons = `
+                <button onclick="openUserEditModal(${user.id})" class="btn-primary" style="padding: 5px 10px; margin-right: 5px;">编辑</button>
+                <button onclick="updateUserStatus(${user.id}, ${user.status === 1 ? 0 : 1})" class="btn-primary" style="padding: 5px 10px; margin-right: 5px; background: ${user.status === 1 ? '#ff9800' : '#4caf50'};">
+                    ${user.status === 1 ? '禁用' : '启用'}
+                </button>
+                <button onclick="deleteUser(${user.id})" class="btn-danger" style="padding: 5px 10px;">删除</button>
+            `;
+        } else {
+            // 普通用户没有任何编辑功能
+            actionButtons = `<span style="color: #999; font-size: 12px;">无权限</span>`;
+        }
+        
         return `
             <tr>
                 <td style="text-align: center; font-weight: bold;">${index + 1}</td>
@@ -2312,19 +2383,60 @@ function renderUsersTable(users) {
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td>${createTime}</td>
                 <td>
-                    <button onclick="openUserEditModal(${user.id})" class="btn-primary" style="padding: 5px 10px; margin-right: 5px;">编辑</button>
-                    <button onclick="updateUserStatus(${user.id}, ${user.status === 1 ? 0 : 1})" class="btn-primary" style="padding: 5px 10px; margin-right: 5px; background: ${user.status === 1 ? '#ff9800' : '#4caf50'};">
-                        ${user.status === 1 ? '禁用' : '启用'}
-                    </button>
-                    <button onclick="deleteUser(${user.id})" class="btn-danger" style="padding: 5px 10px;">删除</button>
+                    ${actionButtons}
                 </td>
             </tr>
         `;
     }).join('');
 }
 
+// 获取当前登录用户ID
+function getCurrentUserId() {
+    // 从全局变量或存储中获取当前用户ID
+    // 如果没有全局变量，可以通过检查当前用户列表中的信息来确定
+    if (window.currentUserId) {
+        return window.currentUserId;
+    }
+    
+    // 尝试从用户列表中获取当前用户ID
+    const usersTableBody = document.getElementById('usersTableBody');
+    if (usersTableBody) {
+        // 如果用户列表只有一条记录且是当前登录用户，可以尝试获取
+        const rows = usersTableBody.querySelectorAll('tr');
+        if (rows.length === 1) {
+            // 这种情况下无法准确判断，需要后端提供专门的接口
+            return null;
+        }
+    }
+    
+    return null;
+}
+
+// 从后端获取当前用户信息
+async function fetchCurrentUserDetails() {
+    try {
+        const response = await fetch('/api/auth/current');
+        const result = await response.json();
+        
+        if (result.success && result.user) {
+            window.currentUserId = result.user.id;
+            return result.user;
+        }
+    } catch (error) {
+        console.error('获取当前用户信息失败：', error);
+    }
+    
+    return null;
+}
+
 // 打开用户编辑模态框
 function openUserEditModal(userId) {
+    // 检查权限 - 只有管理员可以编辑用户
+    if (currentUserRole !== 'admin') {
+        alert('无权限编辑用户信息');
+        return;
+    }
+    
     currentEditUserId = userId;
     const modal = document.getElementById('userEditModal');
     const title = document.getElementById('userEditModalTitle');
@@ -2332,10 +2444,16 @@ function openUserEditModal(userId) {
     
     if (userId) {
         title.textContent = '编辑用户';
+        // 管理员编辑其他用户时隐藏密码字段（密码通过重置密码功能修改）
         passwordGroup.style.display = 'none';
         // 加载用户信息
         loadUserInfo(userId);
     } else {
+        // 只有管理员可以新增用户
+        if (currentUserRole !== 'admin') {
+            alert('无权限新增用户');
+            return;
+        }
         title.textContent = '新增用户';
         passwordGroup.style.display = 'block';
         document.getElementById('editUsername').value = '';
@@ -2350,15 +2468,28 @@ function openUserEditModal(userId) {
 // 加载用户信息
 async function loadUserInfo(userId) {
     try {
-        const response = await fetch('/api/user/list');
+        // 只有管理员可以加载用户信息
+        if (currentUserRole !== 'admin') {
+            console.error('普通用户无权限加载用户信息');
+            return;
+        }
+        
+        // 直接获取指定用户的信息，而不是从列表中查找
+        const response = await fetch(`/api/user/list`);
         const result = await response.json();
+        
         if (result.success) {
-            const user = result.users.find(u => u.id === userId);
-            if (user) {
-                document.getElementById('editUsername').value = user.username || '';
-                document.getElementById('editRealName').value = user.realName || '';
-                document.getElementById('editEmail').value = user.email || '';
+            // 管理员可以查看所有用户信息
+            if (currentUserRole === 'admin') {
+                const user = result.users.find(u => u.id === userId);
+                if (user) {
+                    document.getElementById('editUsername').value = user.username || '';
+                    document.getElementById('editRealName').value = user.realName || '';
+                    document.getElementById('editEmail').value = user.email || '';
+                }
             }
+        } else {
+            console.error('获取用户列表失败：', result.message);
         }
     } catch (error) {
         console.error('加载用户信息失败：', error);
@@ -2373,6 +2504,12 @@ function closeUserEditModal() {
 
 // 保存用户
 async function saveUser() {
+    // 检查权限 - 只有管理员可以保存用户
+    if (currentUserRole !== 'admin') {
+        alert('无权限保存用户信息');
+        return;
+    }
+    
     const username = document.getElementById('editUsername').value.trim();
     const password = document.getElementById('editPassword').value;
     const realName = document.getElementById('editRealName').value.trim();
@@ -2395,10 +2532,19 @@ async function saveUser() {
     
     try {
         if (currentEditUserId) {
-            // 更新用户
+            // 更新用户 - 管理员可以更新任意用户
             const formData = new URLSearchParams();
-            if (realName) formData.append('realName', realName);
-            if (email) formData.append('email', email);
+            
+            // 管理员可以更新用户名
+            if (username) {
+                formData.append('username', username);
+            }
+            if (realName !== null && realName !== undefined) {
+                formData.append('realName', realName);
+            }
+            if (email !== null && email !== undefined) {
+                formData.append('email', email);
+            }
             
             const response = await fetch(`/api/user/${currentEditUserId}`, {
                 method: 'PUT',
@@ -2417,7 +2563,7 @@ async function saveUser() {
                 alert('更新失败：' + result.message);
             }
         } else {
-            // 新增用户
+            // 新增用户 - 只有管理员可以新增
             const formData = new URLSearchParams();
             formData.append('username', username);
             formData.append('password', password);
@@ -2449,6 +2595,12 @@ async function saveUser() {
 
 // 删除用户
 async function deleteUser(userId) {
+    // 检查权限
+    if (currentUserRole !== 'admin') {
+        alert('无权限删除用户');
+        return;
+    }
+    
     if (!confirm('确定要删除这个用户吗？')) {
         return;
     }
@@ -2473,6 +2625,12 @@ async function deleteUser(userId) {
 
 // 更新用户状态
 async function updateUserStatus(userId, status) {
+    // 检查权限
+    if (currentUserRole !== 'admin') {
+        alert('无权限操作用户状态');
+        return;
+    }
+    
     const statusText = status === 1 ? '启用' : '禁用';
     if (!confirm(`确定要${statusText}这个用户吗？`)) {
         return;

@@ -29,12 +29,20 @@ public class UserInitializer implements CommandLineRunner {
                 "系统管理员",
                 "admin@example.com"
             );
+            
+            // 更新admin用户的角色为管理员
+            userService.updateUserRoleByUsername("admin", "admin");
+            
             System.out.println("==========================================");
             System.out.println("默认管理员用户已创建：");
             System.out.println("用户名：admin");
             System.out.println("密码：admin123");
+            System.out.println("角色：管理员");
             System.out.println("==========================================");
         }
+        
+        // 确保现有的admin用户具有管理员角色
+        userService.updateUserRoleByUsername("admin", "admin");
     }
 }
 

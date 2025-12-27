@@ -63,10 +63,18 @@ public class UserService {
      * 更新用户信息
      */
     @Transactional
-    public User updateUser(Long userId, String realName, String email) {
+    public User updateUser(Long userId, String username, String realName, String email) {
         Optional<User> userOpt = userRepository.findById(userId);
         if (userOpt.isPresent()) {
             User user = userOpt.get();
+            if (username != null && !username.trim().isEmpty()) {
+                // 检查新用户名是否与其他用户重复
+                Optional<User> existingUser = userRepository.findByUsername(username);
+                if (existingUser.isPresent() && !existingUser.get().getId().equals(userId)) {
+                    throw new RuntimeException("用户名已存在");
+                }
+                user.setUsername(username);
+            }
             if (realName != null) {
                 user.setRealName(realName);
             }
@@ -134,6 +142,19 @@ public class UserService {
             }
         }
         return false;
+    }
+    
+    /**
+     * 更新用户角色
+     */
+    @Transactional
+    public void updateUserRoleByUsername(String username, String role) {
+        Optional<User> userOpt = userRepository.findByUsername(username);
+        if (userOpt.isPresent()) {
+            User user = userOpt.get();
+            user.setRole(role);
+            userRepository.save(user);
+        }
     }
     
     /**

@@ -180,6 +180,141 @@ public class QuotaMatchingService {
     }
     
     /**
+     * 多线程并行匹配（优化版本，充分利用多核CPU）
+     * 按用户ID过滤项目清单
+     */
+    @Transactional(timeout = 3600) // 增加事务超时时间到1小时
+    public int batchMatchQuotasForUser(Long userId, Long versionId) {
+        long startTime = System.currentTimeMillis();
+        
+        // 获取指定用户的所有需要匹配的项目清单
+        List<ProjectItem> allItems = itemRepository.findByUserId(userId);
+        List<ProjectItem> itemsToMatch = allItems.stream()
+                .filter(item -> {
+                    // 跳过手动修改（单定额）和多定额匹配的项目
+                    if (item.getMatchStatus() != null && (item.getMatchStatus() == 2 || item.getMatchStatus() == 3)) {
+                        return false;
+                    }
+                    // 只有单位列有数据才进行匹配
+                    return item.getUnit() != null && !item.getUnit().trim().isEmpty();
+                })
+                .collect(Collectors.toList());
+        
+        // 处理没有单位的项目
+        List<ProjectItem> itemsWithoutUnit = allItems.stream()
+                .filter(item -> item.getUnit() == null || item.getUnit().trim().isEmpty())
+                .filter(item -> item.getMatchStatus() == null || item.getMatchStatus() != 2 && item.getMatchStatus() != 3)
+                .collect(Collectors.toList());
+        for (ProjectItem item : itemsWithoutUnit) {
+            item.setMatchStatus(0);
+        }
+        
+        if (itemsToMatch.isEmpty()) {
+            // 如果没有需要匹配的项目，只保存没有单位的项目
+            if (!itemsWithoutUnit.isEmpty()) {
+                itemRepository.saveAll(itemsWithoutUnit);
+            }
+            return 0;
+        }
+        
+        // 获取所有定额（如果指定了版本，则只获取该版本的定额）
+        List<EnterpriseQuota> allQuotas;
+        if (versionId != null) {
+            allQuotas = quotaRepository.findByVersionId(versionId);
+        } else {
+            allQuotas = quotaRepository.findAll();
+        }
+        
+        if (allQuotas.isEmpty()) {
+            // 如果没有定额，标记所有项目为未匹配
+            for (ProjectItem item : itemsToMatch) {
+                item.setMatchStatus(0);
+            }
+            itemRepository.saveAll(itemsToMatch);
+            if (!itemsWithoutUnit.isEmpty()) {
+                itemRepository.saveAll(itemsWithoutUnit);
+            }
+            return 0;
+        }
+        
+        // 性能优化：预提取所有定额的关键词并缓存（只执行一次）
+        Map<Long, List<String>> quotaKeywordsCache = new ConcurrentHashMap<>();
+        Map<Long, String> quotaNameCache = new ConcurrentHashMap<>();
+        Map<Long, String> quotaFeatureCache = new ConcurrentHashMap<>();
+        
+        System.out.println("开始预提取定额关键词，定额数量: " + allQuotas.size());
+        for (EnterpriseQuota quota : allQuotas) {
+            List<String> keywords = new ArrayList<>();
+            if (quota.getQuotaName() != null && !quota.getQuotaName().trim().isEmpty()) {
+                keywords.addAll(KeywordExtractor.extractKeywords(quota.getQuotaName()));
+                quotaNameCache.put(quota.getId(), quota.getQuotaName());
+            }
+            if (quota.getFeatureValue() != null && !quota.getFeatureValue().trim().isEmpty()) {
+                keywords.addAll(KeywordExtractor.extractKeywords(quota.getFeatureValue()));
+                quotaFeatureCache.put(quota.getId(), quota.getFeatureValue());
+            }
+            quotaKeywordsCache.put(quota.getId(), keywords);
+        }
+        System.out.println("定额关键词预提取完成");
+        
+        // 将项目清单分割成多个批次，用于并行处理
+        int totalItems = itemsToMatch.size();
+        int batchCount = Math.max(1, (totalItems + matchingBatchSize - 1) / matchingBatchSize);
+        System.out.println("开始并行匹配，总项目数: " + totalItems + ", 批次数量: " + batchCount);
+        
+        // 使用线程安全的集合收集结果
+        List<ProjectItem> allMatchedItems = Collections.synchronizedList(new ArrayList<>());
+        AtomicInteger matchedCount = new AtomicInteger(0);
+        CountDownLatch latch = new CountDownLatch(batchCount);
+        
+        // 提交并行匹配任务
+        for (int i = 0; i < batchCount; i++) {
+            final int batchIndex = i;
+            final int start = i * matchingBatchSize;
+            final int end = Math.min(start + matchingBatchSize, totalItems);
+            final List<ProjectItem> batchItems = itemsToMatch.subList(start, end);
+            
+            matchingTaskExecutor.execute(() -> {
+                try {
+                    int batchMatched = processBatch(batchItems, allQuotas, quotaKeywordsCache, 
+                            quotaNameCache, quotaFeatureCache, allMatchedItems);
+                    matchedCount.addAndGet(batchMatched);
+                } catch (Exception e) {
+                    System.err.println("批次 " + batchIndex + " 处理失败: " + e.getMessage());
+                    e.printStackTrace();
+                } finally {
+                    latch.countDown();
+                }
+            });
+        }
+        
+        // 等待所有批次完成
+        try {
+            boolean finished = latch.await(30, TimeUnit.MINUTES);
+            if (!finished) {
+                System.err.println("警告: 匹配任务超时，部分批次可能未完成");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            System.err.println("匹配任务被中断");
+        }
+        
+        // 合并所有结果
+        List<ProjectItem> allItemsToSave = new ArrayList<>(allMatchedItems);
+        allItemsToSave.addAll(itemsWithoutUnit);
+        
+        // 批量保存所有结果
+        System.out.println("开始批量保存，共 " + allItemsToSave.size() + " 条记录");
+        saveItemsInBatches(allItemsToSave, saveBatchSize);
+        
+        long endTime = System.currentTimeMillis();
+        int finalMatchedCount = matchedCount.get();
+        System.out.println("匹配完成，共匹配 " + finalMatchedCount + " 条，耗时: " + (endTime - startTime) + "ms");
+        
+        return finalMatchedCount;
+    }
+    
+    /**
      * 处理一个批次的匹配任务
      */
     private int processBatch(List<ProjectItem> batchItems, List<EnterpriseQuota> allQuotas,
