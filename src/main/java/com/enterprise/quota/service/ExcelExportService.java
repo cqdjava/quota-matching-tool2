@@ -46,8 +46,8 @@ public class ExcelExportService {
             
             Row headerRow = sheet.createRow(0);
             String[] headers = {
-                "序号", "清单编码", "清单名称", "项目特征值", "单位", "工程量",
-                "匹配定额编码", "匹配定额名称", "定额项目特征", "单价", "合价", "匹配状态", "备注", "多定额明细"
+                "序号", "清单编码", "清单名称", "项目特征值", "单位", "工程量", "备注",
+                "匹配定额编码", "匹配定额名称", "定额项目特征", "单价", "合价", "匹配状态", "多定额明细"
             };
             
             for (int i = 0; i < headers.length; i++) {
@@ -69,6 +69,8 @@ public class ExcelExportService {
                 row.createCell(3).setCellValue(item.getFeatureValue() != null ? item.getFeatureValue() : "");
                 row.createCell(4).setCellValue(item.getUnit() != null ? item.getUnit() : "");
                 row.createCell(5).setCellValue(item.getQuantity() != null ? item.getQuantity().doubleValue() : 0);
+                // 备注列移到工程量后面（索引6）
+                row.createCell(6).setCellValue(item.getRemark() != null ? item.getRemark() : "");
                 
                 // 如果是多定额匹配，显示汇总信息
                 if (item.getMatchStatus() != null && item.getMatchStatus() == 3) {
@@ -82,22 +84,22 @@ public class ExcelExportService {
                             if (quotaNames.length() > 0) quotaNames.append("; ");
                             quotaNames.append(quota.getQuotaName());
                         }
-                        row.createCell(6).setCellValue(quotaCodes.toString());
-                        row.createCell(7).setCellValue(quotaNames.toString());
-                        row.createCell(8).setCellValue("多定额组合");
+                        row.createCell(7).setCellValue(quotaCodes.toString());
+                        row.createCell(8).setCellValue(quotaNames.toString());
+                        row.createCell(9).setCellValue("多定额组合");
                     } else {
-                        row.createCell(6).setCellValue("");
                         row.createCell(7).setCellValue("");
                         row.createCell(8).setCellValue("");
+                        row.createCell(9).setCellValue("");
                     }
                 } else {
-                    row.createCell(6).setCellValue(item.getMatchedQuotaCode() != null ? item.getMatchedQuotaCode() : "");
-                    row.createCell(7).setCellValue(item.getMatchedQuotaName() != null ? item.getMatchedQuotaName() : "");
-                    row.createCell(8).setCellValue(item.getMatchedQuotaFeatureValue() != null ? item.getMatchedQuotaFeatureValue() : "");
+                    row.createCell(7).setCellValue(item.getMatchedQuotaCode() != null ? item.getMatchedQuotaCode() : "");
+                    row.createCell(8).setCellValue(item.getMatchedQuotaName() != null ? item.getMatchedQuotaName() : "");
+                    row.createCell(9).setCellValue(item.getMatchedQuotaFeatureValue() != null ? item.getMatchedQuotaFeatureValue() : "");
                 }
                 
-                row.createCell(9).setCellValue(item.getMatchedUnitPrice() != null ? item.getMatchedUnitPrice().doubleValue() : 0);
-                row.createCell(10).setCellValue(item.getTotalPrice() != null ? item.getTotalPrice().doubleValue() : 0);
+                row.createCell(10).setCellValue(item.getMatchedUnitPrice() != null ? item.getMatchedUnitPrice().doubleValue() : 0);
+                row.createCell(11).setCellValue(item.getTotalPrice() != null ? item.getTotalPrice().doubleValue() : 0);
                 
                 String status = "";
                 if (item.getMatchStatus() != null) {
@@ -108,10 +110,9 @@ public class ExcelExportService {
                         case 3: status = "多定额匹配"; break;
                     }
                 }
-                row.createCell(11).setCellValue(status);
-                row.createCell(12).setCellValue(item.getRemark() != null ? item.getRemark() : "");
+                row.createCell(12).setCellValue(status);
                 
-                // 多定额明细
+                // 多定额明细（索引13）
                 if (item.getMatchStatus() != null && item.getMatchStatus() == 3) {
                     List<ProjectItemQuota> quotas = itemQuotaRepository.findByProjectItemIdOrderBySortOrderAsc(item.getId());
                     if (!quotas.isEmpty()) {

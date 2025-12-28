@@ -302,12 +302,12 @@ function renderItemsTable(items) {
                 <td class="editable-cell" data-field="featureValue" data-item-id="${item.id}" title="双击编辑">${item.featureValue || ''}</td>
                 <td class="editable-cell" data-field="unit" data-item-id="${item.id}" title="双击编辑">${item.unit || ''}</td>
                 <td class="editable-cell" data-field="quantity" data-item-id="${item.id}" data-type="number" title="双击编辑">${item.quantity || 0}</td>
+                <td class="editable-cell" data-field="remark" data-item-id="${item.id}" title="双击编辑">${item.remark || ''}</td>
                 <td style="vertical-align: top;">${quotaDisplay}</td>
                 <td style="vertical-align: top;">${quotaNameDisplay}</td>
                 <td style="vertical-align: top;">${quotaFeatureDisplay}</td>
                 <td>${item.matchedUnitPrice || 0}</td>
                 <td>${item.totalPrice || 0}</td>
-                <td class="editable-cell" data-field="remark" data-item-id="${item.id}" title="双击编辑">${item.remark || ''}</td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td>
                     <button class="action-btn" onclick="openEditModal(${item.id}, '${(item.itemName || '').replace(/'/g, "\\'")}')">
@@ -1568,9 +1568,6 @@ function initResizableColumns() {
 function initResizableQuotaColumns() {
     const table = document.getElementById('quotasTable');
     if (!table) return;
-    
-    // 先自动调整列宽
-    autoResizeColumns('quotasTable');
     
     const headers = table.querySelectorAll('thead th');
     

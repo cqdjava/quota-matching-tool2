@@ -27,8 +27,10 @@ public class WebConfig implements WebMvcConfigurer {
     
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
+        // 配置静态资源，禁用缓存以确保浏览器加载最新文件
         registry.addResourceHandler("/**")
-                .addResourceLocations("classpath:/static/");
+                .addResourceLocations("classpath:/static/")
+                .setCachePeriod(0);  // 禁用缓存，确保浏览器总是加载最新文件
     }
     
     @Override
