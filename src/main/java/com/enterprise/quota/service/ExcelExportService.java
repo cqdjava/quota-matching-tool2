@@ -28,7 +28,8 @@ public class ExcelExportService {
     private EnterpriseQuotaRepository quotaRepository;
     
     public byte[] exportMatchedItems() throws IOException {
-        List<ProjectItem> items = itemRepository.findAll();
+        // 按排序字段升序排列导出数据
+        List<ProjectItem> items = itemRepository.findAllByOrderBySortOrderAsc();
         
         try (Workbook workbook = new XSSFWorkbook();
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {

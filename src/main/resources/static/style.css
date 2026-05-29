@@ -587,6 +587,13 @@ tbody tr:hover {
     padding: 40px !important;
 }
 
+/* 选中行样式 */
+.selected-row {
+    background-color: #e3f2fd !important;
+    outline: 2px solid #1976d2;
+    outline-offset: -2px;
+}
+
 .status-badge {
     display: inline-block;
     padding: 4px 12px;
@@ -856,4 +863,52 @@ tbody tr:hover {
 
 #placeholdersContainer:hover::after {
     background: linear-gradient(135deg, transparent 0%, transparent 40%, #0d47a1 40%, #0d47a1 45%, transparent 45%, transparent 55%, #0d47a1 55%, #0d47a1 60%, transparent 60%, transparent 100%);
+}
+
+/* 修复表格可见性问题，但保持原有布局 */
+.table-container {
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* 确保表格内容可见，但保持原有显示类型 */
+.table-container table {
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+.table-container tbody {
+    display: table-row-group !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+.table-container tr {
+    display: table-row !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+.table-container td,
+.table-container th {
+    display: table-cell !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* 确保标签页内容可见 */
+.tab-content.active {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+/* 防止特定表格内容被隐藏 */
+#itemsTableBody,
+#quotasTableBody,
+#versionsTableBody,
+#usersTableBody {
+    display: table-row-group !important;
+    visibility: visible !important;
+    opacity: 1 !important;
 }

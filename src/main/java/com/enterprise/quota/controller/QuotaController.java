@@ -26,6 +26,7 @@ import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 @RestController
 @RequestMapping("/api/quota")
@@ -86,9 +87,19 @@ public class QuotaController {
             }
             
             List<ProjectItem> items = importService.importProjectItems(file);
-            // 为导入的项目清单设置用户ID
-            for (ProjectItem item : items) {
+            // 为导入的项目清单设置用户ID和排序字段
+            List<ProjectItem> existingItems = itemRepository.findByUserIdOrderBySortOrderAsc(userId);
+            Integer maxSortOrder = existingItems.stream()
+                    .map(ProjectItem::getSortOrder)
+                    .filter(Objects::nonNull)
+                    .max(Integer::compareTo)
+                    .orElse(0);
+            
+            for (int i = 0; i < items.size(); i++) {
+                ProjectItem item = items.get(i);
                 item.setUserId(userId);
+                // 为导入的项目按顺序分配sortOrder值
+                item.setSortOrder(maxSortOrder + i + 1);
             }
             itemRepository.saveAll(items);
             result.put("success", true);
@@ -133,9 +144,203 @@ public class QuotaController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
         
-        // 只返回当前用户的项目清单
-        List<ProjectItem> items = itemRepository.findByUserId(userId);
+        // 只返回当前用户的项目清单，按排序字段升序排列
+        List<ProjectItem> items = itemRepository.findByUserIdOrderBySortOrderAsc(userId);
+        
+        // 添加调试信息
+        System.out.println("=== 获取项目清单数据 ===");
+        System.out.println("用户ID: " + userId);
+        System.out.println("返回项目数量: " + items.size());
+        for (int i = 0; i < items.size(); i++) {
+            ProjectItem item = items.get(i);
+            System.out.println("项目 " + i + ": ID=" + item.getId() + 
+                             ", 名称=" + item.getItemName() + 
+                             ", sortOrder=" + item.getSortOrder());
+        }
+        
         return ResponseEntity.ok(items);
+    }
+    
+    /**
+     * 在指定位置插入项目清单
+     */
+    @PostMapping("/items/insert")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> insertItem(
+            @RequestBody Map<String, Object> request, HttpSession session) {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            System.out.println("=== 开始处理插入请求 ===");
+            System.out.println("收到完整请求: " + request);
+            
+            Long userId = (Long) session.getAttribute("userId");
+            System.out.println("用户ID: " + userId);
+            if (userId == null) {
+                System.out.println("用户未登录");
+                result.put("success", false);
+                result.put("message", "请先登录");
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(result);
+            }
+            
+            // 获取插入位置参数
+            Object insertAfterIndexObj = request.get("insertAfterIndex");
+            Integer insertAfterIndex = null;
+            if (insertAfterIndexObj != null) {
+                if (insertAfterIndexObj instanceof Integer) {
+                    insertAfterIndex = (Integer) insertAfterIndexObj;
+                } else if (insertAfterIndexObj instanceof Number) {
+                    insertAfterIndex = ((Number) insertAfterIndexObj).intValue();
+                } else {
+                    try {
+                        insertAfterIndex = Integer.parseInt(insertAfterIndexObj.toString());
+                    } catch (NumberFormatException e) {
+                        System.out.println("插入位置转换失败: " + insertAfterIndexObj);
+                    }
+                }
+            }
+            System.out.println("插入位置: " + insertAfterIndex);
+            
+            // 从请求中获取项目数据
+            Object itemDataObj = request.get("item");
+            System.out.println("项目数据对象类型: " + (itemDataObj != null ? itemDataObj.getClass().getName() : "null"));
+            System.out.println("项目数据对象值: " + itemDataObj);
+            
+            Map<String, Object> itemData = null;
+            if (itemDataObj instanceof Map) {
+                itemData = (Map<String, Object>) itemDataObj;
+            } else {
+                System.out.println("项目数据不是Map类型");
+                result.put("success", false);
+                result.put("message", "项目数据格式错误");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            System.out.println("转换后的项目数据: " + itemData);
+            
+            if (itemData == null) {
+                System.out.println("项目数据为null");
+                result.put("success", false);
+                result.put("message", "项目数据不能为空");
+                return ResponseEntity.badRequest().body(result);
+            }
+            
+            // 创建新项目
+            ProjectItem newItem = new ProjectItem();
+            newItem.setItemCode((String) itemData.get("itemCode"));
+            newItem.setItemName((String) itemData.get("itemName"));
+            newItem.setFeatureValue((String) itemData.get("featureValue"));
+            newItem.setUnit((String) itemData.get("unit"));
+            newItem.setRemark((String) itemData.get("remark"));
+            
+            // 处理数量字段
+            Object quantityObj = itemData.get("quantity");
+            if (quantityObj != null) {
+                if (quantityObj instanceof Number) {
+                    newItem.setQuantity(BigDecimal.valueOf(((Number) quantityObj).doubleValue()));
+                } else {
+                    try {
+                        newItem.setQuantity(new BigDecimal(quantityObj.toString()));
+                    } catch (NumberFormatException e) {
+                        newItem.setQuantity(BigDecimal.ZERO);
+                    }
+                }
+            } else {
+                newItem.setQuantity(BigDecimal.ZERO);
+            }
+            newItem.setUserId(userId);
+            
+            // 设置默认匹配状态
+            newItem.setMatchStatus(0);
+            newItem.setMatchedQuotaId(null);
+            newItem.setMatchedQuotaCode(null);
+            newItem.setMatchedQuotaName(null);
+            newItem.setMatchedQuotaFeatureValue(null);
+            newItem.setMatchedUnitPrice(null);
+            newItem.setTotalPrice(null);
+            
+            // 获取当前用户的项目清单并按排序字段排列
+            List<ProjectItem> existingItems = itemRepository.findByUserIdOrderBySortOrderAsc(userId);
+            System.out.println("用户现有项目数量: " + existingItems.size());
+            System.out.println("请求的插入位置: " + insertAfterIndex);
+            
+            if (insertAfterIndex == null || insertAfterIndex < 0) {
+                System.out.println("插入位置为null或负数，将在末尾添加");
+                // 如果没有指定插入位置，在末尾添加
+                Integer maxSortOrder = existingItems.stream()
+                        .map(ProjectItem::getSortOrder)
+                        .filter(Objects::nonNull)
+                        .max(Integer::compareTo)
+                        .orElse(0);
+                newItem.setSortOrder(maxSortOrder + 1);
+            } else {
+                System.out.println("进入指定位置插入逻辑");
+                System.out.println("现有项目数量: " + existingItems.size());
+                System.out.println("请求插入索引: " + insertAfterIndex);
+                
+                // 打印所有现有项目的详细信息
+                System.out.println("=== 现有项目详细信息 ===");
+                for (int i = 0; i < existingItems.size(); i++) {
+                    ProjectItem item = existingItems.get(i);
+                    System.out.println("索引 " + i + ": ID=" + item.getId() + 
+                                     ", 名称=" + item.getItemName() + 
+                                     ", sortOrder=" + item.getSortOrder() +
+                                     ", itemCode=" + item.getItemCode());
+                }
+                System.out.println("=======================");
+                
+                // 确保插入位置有效
+                int validInsertIndex = Math.min(insertAfterIndex, existingItems.size() - 1);
+                validInsertIndex = Math.max(validInsertIndex, -1);
+                System.out.println("原始插入索引: " + insertAfterIndex + ", 有效插入索引: " + validInsertIndex);
+                
+                if (validInsertIndex == -1) {
+                    System.out.println("插入到开头位置");
+                    // 插入到开头
+                    newItem.setSortOrder(0);
+                    // 将所有现有项目的排序值增加1
+                    for (ProjectItem item : existingItems) {
+                        item.setSortOrder(item.getSortOrder() + 1);
+                    }
+                    itemRepository.saveAll(existingItems);
+                } else {
+                    // 插入到指定位置之后
+                    ProjectItem afterItem = existingItems.get(validInsertIndex);
+                    System.out.println("参考项目: ID=" + afterItem.getId() + ", sortOrder=" + afterItem.getSortOrder());
+                    
+                    // 处理sortOrder为null的情况
+                    int afterItemSortOrder = afterItem.getSortOrder() != null ? afterItem.getSortOrder() : 0;
+                    int newSortOrder = afterItemSortOrder + 1;
+                    newItem.setSortOrder(newSortOrder);
+                    
+                    System.out.println("新项目排序值: " + newSortOrder);
+                    
+                    // 将指定位置之后的所有项目的排序值增加1
+                    for (int i = validInsertIndex + 1; i < existingItems.size(); i++) {
+                        ProjectItem item = existingItems.get(i);
+                        Integer itemSortOrder = item.getSortOrder();
+                        if (itemSortOrder != null && itemSortOrder >= newSortOrder) {
+                            item.setSortOrder(itemSortOrder + 1);
+                            System.out.println("更新项目ID=" + item.getId() + "的排序值为" + (itemSortOrder + 1));
+                        }
+                    }
+                    itemRepository.saveAll(existingItems);
+                }
+            }
+            
+            // 保存新项目
+            ProjectItem saved = itemRepository.save(newItem);
+            result.put("success", true);
+            result.put("message", "插入项目成功");
+            result.put("item", saved);
+            return ResponseEntity.ok(result);
+            
+        } catch (Exception e) {
+            System.err.println("插入项目时发生错误:");
+            e.printStackTrace();
+            result.put("success", false);
+            result.put("message", "插入项目失败：" + e.getMessage());
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
+        }
     }
     
     /**
@@ -168,6 +373,15 @@ public class QuotaController {
             item.setMatchedQuotaFeatureValue(null);
             item.setMatchedUnitPrice(null);
             item.setTotalPrice(null);
+            
+            // 设置排序字段为最大值+1（添加到末尾）
+            Integer maxSortOrder = itemRepository.findByUserIdOrderBySortOrderAsc(userId)
+                    .stream()
+                    .map(ProjectItem::getSortOrder)
+                    .filter(Objects::nonNull)
+                    .max(Integer::compareTo)
+                    .orElse(0);
+            item.setSortOrder(maxSortOrder + 1);
             
             ProjectItem saved = itemRepository.save(item);
             result.put("success", true);
@@ -315,7 +529,7 @@ public class QuotaController {
     public ResponseEntity<List<EnterpriseQuota>> getAllQuotas(
             @RequestParam(value = "versionId", required = false) Long versionId) {
         if (versionId != null) {
-            return ResponseEntity.ok(quotaRepository.findByVersionId(versionId));
+            return ResponseEntity.ok(quotaRepository.findByVersionIdIncludingUnassigned(versionId));
         }
         return ResponseEntity.ok(quotaRepository.findAll());
     }
@@ -325,7 +539,7 @@ public class QuotaController {
             @RequestParam String keyword,
             @RequestParam(value = "versionId", required = false) Long versionId) {
         if (versionId != null) {
-            return ResponseEntity.ok(quotaRepository.findByVersionIdAndKeyword(versionId, keyword));
+            return ResponseEntity.ok(quotaRepository.findByVersionIdAndKeywordIncludingUnassigned(versionId, keyword));
         }
         return ResponseEntity.ok(quotaRepository.findByKeyword(keyword));
     }

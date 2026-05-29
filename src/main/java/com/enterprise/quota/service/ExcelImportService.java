@@ -61,12 +61,20 @@ public class ExcelImportService {
             
             // 读取表头，确定列索引
             Row headerRow = sheet.getRow(0);
+            int serialIndex = -1;          // 序号
             int itemCodeIndex = -1;
             int itemNameIndex = -1;
             int featureValueIndex = -1;
             int unitIndex = -1;
             int quantityIndex = -1;
             int remarkIndex = -1;
+            int matchedQuotaCodeIndex = -1;     // 匹配定额编码
+            int matchedQuotaNameIndex = -1;     // 匹配定额名称
+            int matchedQuotaFeatureIndex = -1;  // 定额项目特征
+            int unitPriceIndex = -1;            // 单价
+            int totalPriceIndex = -1;           // 合价
+            int matchStatusIndex = -1;          // 匹配状态
+            int multiQuotaDetailIndex = -1;     // 多定额明细
             
             if (headerRow != null) {
                 for (int i = 0; i < headerRow.getLastCellNum(); i++) {
@@ -75,6 +83,12 @@ public class ExcelImportService {
                     String headerValue = getCellValue(cell).trim();
                     
                     // 根据表头文本确定列索引（精确匹配优先，避免误匹配）
+                    
+                    // 序号列（用于排序）
+                    if (serialIndex == -1 && (headerValue.equals("序号") || headerValue.equalsIgnoreCase("serial"))) {
+                        serialIndex = i;
+                    }
+                    
                     // 清单编码：优先完全匹配，避免匹配到"匹配定额编码"
                     if (itemCodeIndex == -1) {
                         if (headerValue.equals("清单编码") || headerValue.equalsIgnoreCase("itemCode")) {
@@ -115,33 +129,49 @@ public class ExcelImportService {
                     if (remarkIndex == -1 && (headerValue.equals("备注") || headerValue.equalsIgnoreCase("remark"))) {
                         remarkIndex = i;
                     }
+                    
+                    // 匹配相关信息列
+                    if (matchedQuotaCodeIndex == -1 && (headerValue.equals("匹配定额编码") || headerValue.equalsIgnoreCase("matchedQuotaCode"))) {
+                        matchedQuotaCodeIndex = i;
+                    }
+                    if (matchedQuotaNameIndex == -1 && (headerValue.equals("匹配定额名称") || headerValue.equalsIgnoreCase("matchedQuotaName"))) {
+                        matchedQuotaNameIndex = i;
+                    }
+                    if (matchedQuotaFeatureIndex == -1 && (headerValue.equals("定额项目特征") || headerValue.equalsIgnoreCase("matchedQuotaFeature"))) {
+                        matchedQuotaFeatureIndex = i;
+                    }
+                    if (unitPriceIndex == -1 && (headerValue.equals("单价") || headerValue.equalsIgnoreCase("unitPrice"))) {
+                        unitPriceIndex = i;
+                    }
+                    if (totalPriceIndex == -1 && (headerValue.equals("合价") || headerValue.equalsIgnoreCase("totalPrice"))) {
+                        totalPriceIndex = i;
+                    }
+                    if (matchStatusIndex == -1 && (headerValue.equals("匹配状态") || headerValue.equalsIgnoreCase("matchStatus"))) {
+                        matchStatusIndex = i;
+                    }
+                    if (multiQuotaDetailIndex == -1 && (headerValue.equals("多定额明细") || headerValue.equalsIgnoreCase("multiQuotaDetail"))) {
+                        multiQuotaDetailIndex = i;
+                    }
                 }
             }
             
-            // 如果表头识别失败，使用默认列索引（兼容旧格式，仅用于标准6列格式）
-            // 注意：只有在列数<=6时才使用默认值，避免在导出格式（14列）中误用
+            // 如果表头识别失败，使用默认列索引
             int columnCount = headerRow != null ? headerRow.getLastCellNum() : 0;
-            boolean useDefaultIndex = columnCount <= 6 || (itemCodeIndex == -1 && itemNameIndex == -1);
+            boolean isExportFormat = columnCount >= 14;  // 导出格式至少14列
             
-            if (useDefaultIndex) {
+            if (!isExportFormat) {
+                // 兼容旧格式（6列标准格式）
                 if (itemCodeIndex == -1) itemCodeIndex = 0;
                 if (itemNameIndex == -1) itemNameIndex = 1;
                 if (featureValueIndex == -1) featureValueIndex = 2;
                 if (unitIndex == -1) unitIndex = 3;
                 if (quantityIndex == -1) quantityIndex = 4;
-                // 备注列：只有在标准格式（6列）且表头识别失败时，才使用默认索引5
                 if (remarkIndex == -1 && columnCount <= 6) {
                     remarkIndex = 5;
                 }
             } else {
-                // 对于导出格式（多列），如果关键列识别失败，使用默认值
-                if (itemCodeIndex == -1) itemCodeIndex = 0;
-                if (itemNameIndex == -1) itemNameIndex = 1;
-                if (featureValueIndex == -1) featureValueIndex = 2;
-                if (unitIndex == -1) unitIndex = 3;
-                if (quantityIndex == -1) quantityIndex = 4;
-                // 备注列：在导出格式中，如果识别失败，不设置默认值（避免读取错误列）
-                // remarkIndex保持为-1，表示不读取备注
+                // 导出格式：使用识别到的索引，未识别到的保持-1
+                // 不设置默认值，避免读取错误列
             }
             
             // 从第二行开始读取数据
@@ -151,7 +181,7 @@ public class ExcelImportService {
                 
                 ProjectItem item = new ProjectItem();
                 
-                // 使用识别到的列索引读取数据
+                // 使用识别到的列索引读取基础数据
                 if (itemCodeIndex >= 0 && itemCodeIndex < row.getLastCellNum()) {
                     item.setItemCode(getCellValue(row.getCell(itemCodeIndex)));
                 }
@@ -168,7 +198,6 @@ public class ExcelImportService {
                     item.setQuantity(getNumericValue(row.getCell(quantityIndex)));
                 }
                 // 备注：只在识别到备注列且该列存在时才读取
-                // 如果remarkIndex为-1，说明没有识别到备注列，不读取（避免读取错误列的数据）
                 if (remarkIndex >= 0 && remarkIndex < row.getLastCellNum()) {
                     Cell remarkCell = row.getCell(remarkIndex);
                     if (remarkCell != null) {
@@ -177,6 +206,52 @@ public class ExcelImportService {
                             item.setRemark(remarkValue);
                         }
                     }
+                }
+                
+                // 读取匹配相关信息（如果存在）
+                if (matchedQuotaCodeIndex >= 0 && matchedQuotaCodeIndex < row.getLastCellNum()) {
+                    String quotaCode = getCellValue(row.getCell(matchedQuotaCodeIndex));
+                    if (quotaCode != null && !quotaCode.trim().isEmpty()) {
+                        item.setMatchedQuotaCode(quotaCode);
+                    }
+                }
+                if (matchedQuotaNameIndex >= 0 && matchedQuotaNameIndex < row.getLastCellNum()) {
+                    String quotaName = getCellValue(row.getCell(matchedQuotaNameIndex));
+                    if (quotaName != null && !quotaName.trim().isEmpty()) {
+                        item.setMatchedQuotaName(quotaName);
+                    }
+                }
+                if (matchedQuotaFeatureIndex >= 0 && matchedQuotaFeatureIndex < row.getLastCellNum()) {
+                    String quotaFeature = getCellValue(row.getCell(matchedQuotaFeatureIndex));
+                    if (quotaFeature != null && !quotaFeature.trim().isEmpty()) {
+                        item.setMatchedQuotaFeatureValue(quotaFeature);
+                    }
+                }
+                if (unitPriceIndex >= 0 && unitPriceIndex < row.getLastCellNum()) {
+                    BigDecimal unitPrice = getNumericValue(row.getCell(unitPriceIndex));
+                    if (unitPrice != null && unitPrice.compareTo(BigDecimal.ZERO) > 0) {
+                        item.setMatchedUnitPrice(unitPrice);
+                    }
+                }
+                if (totalPriceIndex >= 0 && totalPriceIndex < row.getLastCellNum()) {
+                    BigDecimal totalPrice = getNumericValue(row.getCell(totalPriceIndex));
+                    if (totalPrice != null && totalPrice.compareTo(BigDecimal.ZERO) > 0) {
+                        item.setTotalPrice(totalPrice);
+                    }
+                }
+                
+                // 处理匹配状态
+                if (matchStatusIndex >= 0 && matchStatusIndex < row.getLastCellNum()) {
+                    String statusStr = getCellValue(row.getCell(matchStatusIndex));
+                    if (statusStr != null && !statusStr.trim().isEmpty()) {
+                        Integer matchStatus = parseMatchStatus(statusStr.trim());
+                        item.setMatchStatus(matchStatus);
+                    }
+                }
+                
+                // 设置默认值
+                if (item.getMatchStatus() == null) {
+                    item.setMatchStatus(0); // 默认未匹配
                 }
                 
                 // 只添加至少包含清单编码和清单名称的项目
@@ -259,6 +334,28 @@ public class ExcelImportService {
                 }
             default:
                 return BigDecimal.ZERO;
+        }
+    }
+    
+    /**
+     * 解析匹配状态字符串
+     */
+    private Integer parseMatchStatus(String statusStr) {
+        switch (statusStr) {
+            case "未匹配":
+            case "0":
+                return 0;
+            case "已匹配":
+            case "1":
+                return 1;
+            case "手动修改":
+            case "2":
+                return 2;
+            case "多定额匹配":
+            case "3":
+                return 3;
+            default:
+                return 0; // 默认未匹配
         }
     }
 }

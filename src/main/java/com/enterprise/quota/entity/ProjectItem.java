@@ -52,6 +52,9 @@ public class ProjectItem {
     
     @Column(name = "remark", columnDefinition = "LONGTEXT")
     private String remark;
+    
+    @Column(name = "sort_order")
+    private Integer sortOrder;
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
@@ -83,5 +86,7 @@ public class ProjectItem {
     public void setMatchStatus(Integer matchStatus) { this.matchStatus = matchStatus; }
     public String getRemark() { return remark; }
     public void setRemark(String remark) { this.remark = remark; }
+    public Integer getSortOrder() { return sortOrder; }
+    public void setSortOrder(Integer sortOrder) { this.sortOrder = sortOrder; }
 }
 

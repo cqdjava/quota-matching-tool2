@@ -7,21 +7,28 @@ let selectedQuotaIds = new Set();
 let selectedVersionIds = new Set();
 let currentVersionId = null; // 当前选中的版本ID
 let currentViewingVersionId = null; // 当前查看的版本明细ID
+let selectedRowIndex = -1; // 用于跟踪用户选择的行索引
 
 window.onload = function() {
     try {
         // 检查登录状态
         checkLoginStatus();
         
-        loadItems();
-        loadVersions();
-        loadVersionOptions();
-        checkCurrentUserRole(); // 检查当前用户角色
-        loadUsers(); // 加载用户列表
-        loadDocumentTemplates(); // 加载文档模板列表
-        loadReplacementTemplates(); // 加载替换内容模板列表
+        // 使用延迟加载，避免并发请求过多
+        setTimeout(() => {
+            loadItems();
+            loadVersions();
+            loadVersionOptions();
+            checkCurrentUserRole(); // 检查当前用户角色
+            loadUsers(); // 加载用户列表
+            loadDocumentTemplates(); // 加载文档模板列表
+            loadReplacementTemplates(); // 加载替换内容模板列表
+        }, 100);
+        
         // 确保表格容器可以正常滚动
-        ensureTableScrolling();
+        setTimeout(() => {
+            ensureTableScrolling();
+        }, 200);
         
         // 调试信息
         console.log('页面加载完成，函数检查：');
@@ -82,9 +89,36 @@ function ensureTableScrolling() {
         const container = document.getElementById(containerId);
         if (!container) return;
         
-        // 确保容器可以滚动
+        // 确保容器可见并可以滚动
         container.style.overflowY = 'auto';
         container.style.overflowX = 'auto';
+        container.style.visibility = 'visible';
+        
+        // 确保表格容器内容可见
+        const table = container.querySelector('table');
+        if (table) {
+            table.style.visibility = 'visible';
+            
+            // 确保tbody和所有行可见
+            const tbody = table.querySelector('tbody');
+            if (tbody) {
+                tbody.style.display = 'table-row-group';
+                tbody.style.visibility = 'visible';
+                
+                // 确保所有行和单元格可见
+                const rows = tbody.querySelectorAll('tr');
+                rows.forEach(row => {
+                    row.style.display = 'table-row';
+                    row.style.visibility = 'visible';
+                    
+                    const cells = row.querySelectorAll('td, th');
+                    cells.forEach(cell => {
+                        cell.style.display = 'table-cell';
+                        cell.style.visibility = 'visible';
+                    });
+                });
+            }
+        }
         
         // 确保父容器链都有正确的高度设置
         let parent = container.parentElement;
@@ -99,6 +133,9 @@ function ensureTableScrolling() {
             parent = parent.parentElement;
         }
     });
+    
+    // 强制重排以确保所有样式更改生效
+    document.body.offsetHeight;
 }
 
 async function importQuotas() {
@@ -218,14 +255,35 @@ async function matchQuotas() {
 async function loadItems() {
     try {
         const response = await fetch(API_BASE + '/items');
+        
+        // 检查响应状态
+        if (!response.ok) {
+            console.error('加载清单数据失败，状态码:', response.status);
+            // 即使API返回错误，也要确保表格显示空状态而不是空白
+            renderItemsTable([]);
+            return;
+        }
+        
         const items = await response.json();
+        
+        // 验证返回的数据格式
+        if (!Array.isArray(items)) {
+            console.error('返回的数据格式错误:', items);
+            renderItemsTable([]);
+            return;
+        }
         
         // 对于多定额匹配的项目，加载其关联的定额列表
         const itemsWithQuotas = await Promise.all(items.map(async (item) => {
-            if (item.matchStatus === 3) {
+            if (item && item.matchStatus === 3) {
                 try {
                     const quotasResponse = await fetch(API_BASE + `/items/${item.id}/quotas`);
-                    item.quotas = await quotasResponse.json();
+                    if (quotasResponse.ok) {
+                        item.quotas = await quotasResponse.json();
+                    } else {
+                        console.error(`加载项目 ${item.id} 的定额列表失败，状态码:`, quotasResponse.status);
+                        item.quotas = [];
+                    }
                 } catch (error) {
                     console.error(`加载项目 ${item.id} 的定额列表失败：`, error);
                     item.quotas = [];
@@ -242,11 +300,19 @@ async function loadItems() {
         }, 100);
     } catch (error) {
         console.error('加载数据失败：', error);
+        // 发生错误时也应确保显示空状态
+        renderItemsTable([]);
     }
 }
 
 function renderItemsTable(items) {
     const tbody = document.getElementById('itemsTableBody');
+    
+    // 根据经验教训，在渲染前显式设置tbody的显示属性
+    if (tbody) {
+        tbody.style.display = '';
+        tbody.style.visibility = 'visible';
+    }
     
     if (items.length === 0) {
         tbody.innerHTML = '<tr><td colspan="15" class="empty-message">暂无数据，请先导入项目清单</td></tr>';
@@ -291,7 +357,7 @@ function renderItemsTable(items) {
         
         const isSelected = selectedItemIds.has(item.id);
         return `
-            <tr data-item-id="${item.id}">
+            <tr data-item-id="${item.id}" onclick="selectTableRow(this, ${index})" class="${selectedRowIndex === index ? 'selected-row' : ''}">
                 <td style="text-align: center;">
                     <input type="checkbox" ${isSelected ? 'checked' : ''} 
                            onchange="toggleItemSelection(${item.id}, this.checked)">
@@ -310,7 +376,7 @@ function renderItemsTable(items) {
                 <td>${item.totalPrice || 0}</td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td>
-                    <button class="action-btn" onclick="openEditModal(${item.id}, '${(item.itemName || '').replace(/'/g, "\\'")}')">
+                    <button class="action-btn" onclick="openEditModal(${item.id})">
                         匹配定额
                     </button>
                     <button class="action-btn" onclick="openItemEditModal(${item.id})" style="background: linear-gradient(135deg, #4caf50 0%, #388e3c 100%);">编辑</button>
@@ -327,6 +393,15 @@ function renderItemsTable(items) {
         initResizableColumns();
         updateItemBatchActions();
         ensureTableScrolling();
+        
+        // 根据经验教训，强制重排确保表格正确渲染
+        if (tbody) {
+            tbody.offsetHeight; // 触发重排
+            tbody.style.transform = 'translateZ(0)'; // 启用硬件加速
+            setTimeout(() => {
+                tbody.style.transform = ''; // 移除临时样式
+            }, 10);
+        }
     }, 100);
 }
 
@@ -338,7 +413,7 @@ function updateTotalAmount(total) {
     }
 }
 
-// 增加新行到表格
+// 增加新行到表格（恢复为原始逻辑：在末尾增加一行）
 async function addNewRowToTable() {
     try {
         // 创建一个新的空项目清单
@@ -351,25 +426,93 @@ async function addNewRowToTable() {
             remark: ''
         };
         
-        const response = await fetch(API_BASE + '/items', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(newItem)
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            // 刷新列表
-            await loadItems();
+        // 如果用户选择了行，使用插入API
+        if (selectedRowIndex >= 0) {
+            const requestData = {
+                insertAfterIndex: selectedRowIndex,
+                item: newItem
+            };
+            console.log('发送插入请求:', requestData);
+            console.log('选中行索引:', selectedRowIndex);
+            console.log('selectedRowIndex类型:', typeof selectedRowIndex);
+            console.log('selectedRowIndex值:', selectedRowIndex);
+            
+            try {
+                const response = await fetch(API_BASE + '/items/insert', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(requestData)
+                });
+                
+                console.log('响应状态:', response.status);
+                console.log('响应是否成功:', response.ok);
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    console.error('响应错误内容:', errorText);
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+                const result = await response.json();
+                console.log('响应结果:', result);
+                
+                if (result.success) {
+                    // 重新加载项目列表（现在按排序字段排列）
+                    await loadItems();
+                    
+                    // 重置选中行索引
+                    selectedRowIndex = -1;
+                    
+                    console.log('已在指定行下方成功插入新行');
+                } else {
+                    console.error('插入失败:', result.message);
+                    alert('增加行失败：' + result.message);
+                }
+            } catch (error) {
+                console.error('网络请求错误:', error);
+                alert('增加行失败：' + error.message);
+            }
         } else {
-            alert('增加行失败：' + result.message);
+            // 如果没有选择行，则在末尾添加
+            const response = await fetch(API_BASE + '/items', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(newItem)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // 刷新列表
+                await loadItems();
+            } else {
+                alert('增加行失败：' + result.message);
+            }
         }
     } catch (error) {
         alert('增加行失败：' + error.message);
     }
+}
+
+// 选择表格行
+function selectTableRow(rowElement, rowIndex) {
+    // 清除之前的选择样式
+    const allRows = document.querySelectorAll('#itemsTableBody tr');
+    allRows.forEach(row => {
+        row.classList.remove('selected-row');
+    });
+    
+    // 添加选择样式到当前行
+    rowElement.classList.add('selected-row');
+    
+    // 更新选中行索引
+    selectedRowIndex = rowIndex;
+    
+    console.log('选中行:', rowIndex);
 }
 
 function filterItems() {
@@ -492,8 +635,19 @@ function startEditCell(cell) {
     });
 }
 
-async function openEditModal(itemId, itemName) {
+async function openEditModal(itemId) {
     currentEditItemId = itemId;
+
+    // 从当前表格行中获取清单名称，避免在 onclick 中直接传入过长字符串导致解析失败
+    let itemName = '';
+    const row = document.querySelector(`#itemsTableBody tr[data-item-id="${itemId}"]`);
+    if (row) {
+        const nameCell = row.querySelector('.editable-cell[data-field="itemName"]');
+        if (nameCell) {
+            itemName = nameCell.textContent.trim();
+        }
+    }
+
     document.getElementById('currentItemName').textContent = itemName;
     document.getElementById('editModal').style.display = 'block';
     document.getElementById('quotaList').innerHTML = '<p>请输入关键词搜索企业定额</p>';
@@ -1013,14 +1167,46 @@ window.onclick = function(event) {
     const itemEditModal = document.getElementById('itemEditModal');
     const quotaEditModal = document.getElementById('quotaEditModal');
     
-    if (event.target === editModal) {
+    // 检查点击目标是否在模态框内
+    if (editModal && event.target === editModal) {
         closeEditModal();
     }
-    if (event.target === itemEditModal) {
+    if (itemEditModal && event.target === itemEditModal) {
         closeItemEditModal();
     }
-    if (event.target === quotaEditModal) {
+    if (quotaEditModal && event.target === quotaEditModal) {
         closeQuotaEditModal();
+    }
+    
+    // 防止点击事件影响表格显示
+    // 检查点击是否在表格区域内，如果是，则保持表格可见
+    const clickedInTable = event.target.closest('.table-container') ||
+                         event.target.closest('#itemsTableBody') ||
+                         event.target.closest('#quotasTableBody') ||
+                         event.target.closest('#versionsTableBody') ||
+                         event.target.closest('#usersTableBody');
+    
+    if (clickedInTable) {
+        // 点击在表格区域，确保表格内容可见
+        setTimeout(() => {
+            // 检查并修复表格可见性
+            const tableBodies = ['#itemsTableBody', '#quotasTableBody', '#versionsTableBody', '#usersTableBody'];
+            tableBodies.forEach(selector => {
+                const tbody = document.querySelector(selector);
+                if (tbody) {
+                    // 确保tbody显示正常
+                    tbody.style.display = 'table-row-group';
+                    tbody.style.visibility = 'visible';
+                    
+                    // 检查表格行是否可见
+                    const rows = tbody.querySelectorAll('tr');
+                    rows.forEach(row => {
+                        row.style.display = 'table-row';
+                        row.style.visibility = 'visible';
+                    });
+                }
+            });
+        }, 10);
     }
 }
 
@@ -1085,16 +1271,41 @@ async function loadQuotas() {
             url += '?versionId=' + currentViewingVersionId;
         }
         const response = await fetch(url);
+        
+        // 检查响应状态
+        if (!response.ok) {
+            console.error('加载定额数据失败，状态码:', response.status);
+            // 即使API返回错误，也要确保表格显示空状态而不是空白
+            renderQuotasTable([]);
+            return;
+        }
+        
         const quotas = await response.json();
+        
+        // 验证返回的数据格式
+        if (!Array.isArray(quotas)) {
+            console.error('返回的定额数据格式错误:', quotas);
+            renderQuotasTable([]);
+            return;
+        }
+        
         renderQuotasTable(quotas);
     } catch (error) {
         console.error('加载定额数据失败：', error);
+        // 发生错误时也应确保显示空状态
+        renderQuotasTable([]);
     }
 }
 
 // 渲染定额表格
 function renderQuotasTable(quotas) {
     const tbody = document.getElementById('quotasTableBody');
+    
+    // 根据经验教训，在渲染前显式设置tbody的显示属性
+    if (tbody) {
+        tbody.style.display = '';
+        tbody.style.visibility = 'visible';
+    }
     
     if (quotas.length === 0) {
         tbody.innerHTML = '<tr><td colspan="12" class="empty-message">暂无数据，请先导入或新增企业定额</td></tr>';
@@ -1133,10 +1344,19 @@ function renderQuotasTable(quotas) {
         initEditableQuotaCells();
         initResizableQuotaColumns();
         ensureTableScrolling();
+        
+        // 根据经验教训，强制重排确保表格正确渲染
+        if (tbody) {
+            tbody.offsetHeight; // 触发重排
+            tbody.style.transform = 'translateZ(0)'; // 启用硬件加速
+            setTimeout(() => {
+                tbody.style.transform = ''; // 移除临时样式
+            }, 10);
+        }
     }, 100);
     
-    // 显示/隐藏批量操作
-    document.getElementById('batchActions').style.display = selectedQuotaIds.size > 0 ? 'block' : 'none';
+    // 显示/隐藏批量操作（页面未必存在 batchActions 容器，需判空避免抛错导致表格异常）
+    updateBatchActions();
 }
 
 // 初始化可编辑定额单元格
@@ -1863,10 +2083,29 @@ let currentEditVersionId = null;
 async function loadVersions() {
     try {
         const response = await fetch(API_BASE + '/versions');
+        
+        // 检查响应状态
+        if (!response.ok) {
+            console.error('加载版本数据失败，状态码:', response.status);
+            // 即使API返回错误，也要确保表格显示空状态而不是空白
+            renderVersionsTable([]);
+            return;
+        }
+        
         const versions = await response.json();
+        
+        // 验证返回的数据格式
+        if (!Array.isArray(versions)) {
+            console.error('返回的版本数据格式错误:', versions);
+            renderVersionsTable([]);
+            return;
+        }
+        
         renderVersionsTable(versions);
     } catch (error) {
         console.error('加载版本数据失败：', error);
+        // 发生错误时也应确保显示空状态
+        renderVersionsTable([]);
     }
 }
 
@@ -1874,6 +2113,12 @@ async function loadVersions() {
 function renderVersionsTable(versions) {
     const tbody = document.getElementById('versionsTableBody');
     if (!tbody) return;
+    
+    // 根据经验教训，在渲染前显式设置tbody的显示属性
+    if (tbody) {
+        tbody.style.display = '';
+        tbody.style.visibility = 'visible';
+    }
     
     if (versions.length === 0) {
         tbody.innerHTML = '<tr><td colspan="7" class="empty-message">暂无数据，请先新增版本</td></tr>';
@@ -1909,6 +2154,15 @@ function renderVersionsTable(versions) {
     setTimeout(() => {
         initResizableVersionColumns();
         updateVersionBatchActions();
+        
+        // 根据经验教训，强制重排确保表格正确渲染
+        if (tbody) {
+            tbody.offsetHeight; // 触发重排
+            tbody.style.transform = 'translateZ(0)'; // 启用硬件加速
+            setTimeout(() => {
+                tbody.style.transform = ''; // 移除临时样式
+            }, 10);
+        }
     }, 100);
 }
 
@@ -2179,7 +2433,30 @@ function updateVersionBatchActions() {
 async function loadVersionOptions() {
     try {
         const response = await fetch(API_BASE + '/versions');
+        
+        // 检查响应状态
+        if (!response.ok) {
+            console.error('加载版本选项失败，状态码:', response.status);
+            // 即使API返回错误，也要确保下拉框显示默认选项
+            const select = document.getElementById('versionSelect');
+            if (select) {
+                select.innerHTML = '<option value="">暂无版本</option>';
+            }
+            return;
+        }
+        
         const versions = await response.json();
+        
+        // 验证返回的数据格式
+        if (!Array.isArray(versions)) {
+            console.error('返回的版本选项数据格式错误:', versions);
+            const select = document.getElementById('versionSelect');
+            if (select) {
+                select.innerHTML = '<option value="">暂无版本</option>';
+            }
+            return;
+        }
+        
         const select = document.getElementById('versionSelect');
         if (select) {
             if (versions.length === 0) {
@@ -2195,6 +2472,11 @@ async function loadVersionOptions() {
         }
     } catch (error) {
         console.error('加载版本选项失败：', error);
+        // 发生错误时也应确保下拉框显示默认选项
+        const select = document.getElementById('versionSelect');
+        if (select) {
+            select.innerHTML = '<option value="">暂无版本</option>';
+        }
     }
 }
 
@@ -2325,16 +2607,34 @@ async function loadUsers() {
         await checkCurrentUserRole();
         
         const response = await fetch('/api/user/list');
+        
+        // 检查响应状态
+        if (!response.ok) {
+            console.error('加载用户列表失败，状态码:', response.status);
+            // 即使API返回错误，也要确保表格显示空状态而不是空白
+            renderUsersTable([]);
+            return;
+        }
+        
         const result = await response.json();
         
         if (result.success) {
+            // 验证返回的数据格式
+            if (!Array.isArray(result.users)) {
+                console.error('返回的用户数据格式错误:', result.users);
+                renderUsersTable([]);
+                return;
+            }
             renderUsersTable(result.users);
         } else {
-            alert('加载用户列表失败：' + result.message);
+            console.error('加载用户列表失败：', result.message);
+            // 即使后端返回错误，也要确保表格显示空状态而不是空白
+            renderUsersTable([]);
         }
     } catch (error) {
         console.error('加载用户列表失败：', error);
-        alert('加载用户列表失败：' + error.message);
+        // 发生错误时也应确保显示空状态
+        renderUsersTable([]);
     }
 }
 
@@ -2344,6 +2644,12 @@ async function loadUsers() {
 function renderUsersTable(users) {
     const tbody = document.getElementById('usersTableBody');
     if (!tbody) return;
+    
+    // 根据经验教训，在渲染前显式设置tbody的显示属性
+    if (tbody) {
+        tbody.style.display = '';
+        tbody.style.visibility = 'visible';
+    }
     
     if (users.length === 0) {
         tbody.innerHTML = '<tr><td colspan="7" class="empty-message">暂无用户数据</td></tr>';
@@ -2385,6 +2691,17 @@ function renderUsersTable(users) {
             </tr>
         `;
     }).join('');
+    
+    // 根据经验教训，强制重排确保表格正确渲染
+    setTimeout(() => {
+        if (tbody) {
+            tbody.offsetHeight; // 触发重排
+            tbody.style.transform = 'translateZ(0)'; // 启用硬件加速
+            setTimeout(() => {
+                tbody.style.transform = ''; // 移除临时样式
+            }, 10);
+        }
+    }, 100);
 }
 
 // 获取当前登录用户ID
@@ -2907,9 +3224,32 @@ function fillDefaultReplacements() {
 async function loadDocumentTemplates() {
     try {
         const response = await fetch('/api/document/template/list');
-        if (response.ok) {
-            const templates = await response.json();
+        
+        // 检查响应状态
+        if (!response.ok) {
+            console.error('加载文档模板失败，状态码:', response.status);
+            // 即使API返回错误，也要确保下拉框显示默认选项
             const select = document.getElementById('documentTemplateSelect');
+            if (select) {
+                select.innerHTML = '<option value="">请选择服务器模板</option>';
+            }
+            return;
+        }
+        
+        const templates = await response.json();
+        
+        // 验证返回的数据格式
+        if (!Array.isArray(templates)) {
+            console.error('返回的文档模板数据格式错误:', templates);
+            const select = document.getElementById('documentTemplateSelect');
+            if (select) {
+                select.innerHTML = '<option value="">请选择服务器模板</option>';
+            }
+            return;
+        }
+        
+        const select = document.getElementById('documentTemplateSelect');
+        if (select) {
             select.innerHTML = '<option value="">请选择服务器模板</option>';
             templates.forEach(template => {
                 const option = document.createElement('option');
@@ -2920,6 +3260,11 @@ async function loadDocumentTemplates() {
         }
     } catch (error) {
         console.error('加载文档模板失败：', error);
+        // 发生错误时也应确保下拉框显示默认选项
+        const select = document.getElementById('documentTemplateSelect');
+        if (select) {
+            select.innerHTML = '<option value="">请选择服务器模板</option>';
+        }
     }
 }
 
@@ -3060,9 +3405,32 @@ async function deleteDocumentTemplate(templateId) {
 async function loadReplacementTemplates() {
     try {
         const response = await fetch('/api/document/replacement-template/list');
-        if (response.ok) {
-            const templates = await response.json();
+        
+        // 检查响应状态
+        if (!response.ok) {
+            console.error('加载替换内容模板失败，状态码:', response.status);
+            // 即使API返回错误，也要确保下拉框显示默认选项
             const select = document.getElementById('replacementTemplateSelect');
+            if (select) {
+                select.innerHTML = '<option value="">选择填充模板</option>';
+            }
+            return;
+        }
+        
+        const templates = await response.json();
+        
+        // 验证返回的数据格式
+        if (!Array.isArray(templates)) {
+            console.error('返回的替换内容模板数据格式错误:', templates);
+            const select = document.getElementById('replacementTemplateSelect');
+            if (select) {
+                select.innerHTML = '<option value="">选择填充模板</option>';
+            }
+            return;
+        }
+        
+        const select = document.getElementById('replacementTemplateSelect');
+        if (select) {
             select.innerHTML = '<option value="">选择填充模板</option>';
             templates.forEach(template => {
                 const option = document.createElement('option');
@@ -3073,6 +3441,11 @@ async function loadReplacementTemplates() {
         }
     } catch (error) {
         console.error('加载替换内容模板失败：', error);
+        // 发生错误时也应确保下拉框显示默认选项
+        const select = document.getElementById('replacementTemplateSelect');
+        if (select) {
+            select.innerHTML = '<option value="">选择填充模板</option>';
+        }
     }
 }
 
@@ -3320,6 +3693,122 @@ if (typeof window !== 'undefined') {
     window.closeSaveReplacementTemplateModal = closeSaveReplacementTemplateModal;
     window.confirmSaveReplacementTemplate = confirmSaveReplacementTemplate;
     window.updateTemplateFileLabel = updateTemplateFileLabel;
+}
+
+// 强制刷新表格显示，解决内容隐藏问题
+function forceRefreshTableDisplay() {
+    // 重新渲染当前活动标签页的表格
+    const activeTab = document.querySelector('.tab-content.active');
+    if (activeTab) {
+        const tabId = activeTab.id;
+        if (tabId === 'itemsTab') {
+            loadItems();
+        } else if (tabId === 'versionsTab') {
+            loadVersions();
+        } else if (tabId === 'usersTab') {
+            loadUsers();
+        } else if (tabId === 'versionDetailTab') {
+            loadQuotas();
+        }
+    }
+}
+
+// 修复表格显示问题，确保表格内容始终可见
+function fixTableVisibility() {
+    // 确保所有表格容器和内容都可见
+    const tableSelectors = ['.table-container', '#itemsTableBody', '#quotasTableBody', '#versionsTableBody', '#usersTableBody'];
+    
+    tableSelectors.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(element => {
+            if (element) {
+                element.style.visibility = 'visible';
+                element.style.display = '';
+                element.style.opacity = '1';
+                
+                // 检查并修复表格行的显示
+                if (element.tagName.toLowerCase() === 'tbody' || element.id.includes('Body')) {
+                    const rows = element.querySelectorAll('tr');
+                    rows.forEach(row => {
+                        row.style.visibility = 'visible';
+                        row.style.display = 'table-row';
+                        
+                        // 检查单元格是否可见
+                        const cells = row.querySelectorAll('td, th');
+                        cells.forEach(cell => {
+                            cell.style.visibility = 'visible';
+                            cell.style.display = '';
+                        });
+                    });
+                }
+            }
+        });
+    });
+    
+    // 强制重排以应用样式更改
+    document.body.offsetHeight;
+}
+
+// 在页面加载完成后应用表格可见性修复
+// 使用多种方法确保页面完全加载后执行
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function() {
+        setTimeout(fixTableVisibility, 100);
+        setTimeout(() => {
+            // 确保默认显示项目清单标签页
+            switchNav('items');
+        }, 200);
+    });
+} else {
+    // 如果页面已加载完成，直接执行
+    setTimeout(fixTableVisibility, 100);
+    setTimeout(() => {
+        // 确保默认显示项目清单标签页
+        switchNav('items');
+    }, 200);
+}
+
+// 监听页面完全加载完成事件
+window.addEventListener('load', function() {
+    setTimeout(fixTableVisibility, 100);
+    setTimeout(() => {
+        // 确保默认显示项目清单标签页
+        switchNav('items');
+        // 再次确保表格滚动功能
+        ensureTableScrolling();
+    }, 200);
+});
+
+// 页面完全加载后初始化表格显示
+window.addEventListener('load', function() {
+    // 确保所有表格元素可见
+    setTimeout(() => {
+        const tableBodies = ['#itemsTableBody', '#quotasTableBody', '#versionsTableBody', '#usersTableBody'];
+        tableBodies.forEach(selector => {
+            const tbody = document.querySelector(selector);
+            if (tbody) {
+                // 确保tbody显示正常
+                tbody.style.display = 'table-row-group';
+                tbody.style.visibility = 'visible';
+                
+                // 检查表格行是否可见
+                const rows = tbody.querySelectorAll('tr');
+                rows.forEach(row => {
+                    row.style.display = 'table-row';
+                    row.style.visibility = 'visible';
+                });
+            }
+        });
+        
+        // 确保表格容器可见
+        ensureTableScrolling();
+    }, 300);
+});
+
+// 将函数添加到全局作用域
+if (typeof window !== 'undefined') {
+    window.forceRefreshTableDisplay = forceRefreshTableDisplay;
+    window.fixTableVisibility = fixTableVisibility;
 }
 
 // 更新文件选择框标签

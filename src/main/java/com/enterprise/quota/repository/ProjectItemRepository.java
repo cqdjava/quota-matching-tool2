@@ -22,5 +22,11 @@ public interface ProjectItemRepository extends JpaRepository<ProjectItem, Long> 
     
     // 删除指定用户的清单项
     void deleteByUserId(Long userId);
+    
+    // 按用户ID和排序字段查询，按排序字段升序排列
+    List<ProjectItem> findByUserIdOrderBySortOrderAsc(Long userId);
+    
+    // 按排序字段升序排列查询所有项目
+    List<ProjectItem> findAllByOrderBySortOrderAsc();
 }
 
