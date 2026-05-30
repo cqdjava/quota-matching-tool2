@@ -34,6 +34,9 @@ public class QuotaMatchingService {
     
     @Autowired
     private MatchingLearningService learningService;
+
+    @Autowired(required = false)
+    private AiReviewService aiReviewService;
     
     @Autowired
     @Qualifier("matchingTaskExecutor")
@@ -163,22 +166,25 @@ public class QuotaMatchingService {
             Thread.currentThread().interrupt();
             System.err.println("匹配任务被中断");
         }
-        
+
         // 合并所有结果
         List<ProjectItem> allItemsToSave = new ArrayList<>(allMatchedItems);
         allItemsToSave.addAll(itemsWithoutUnit);
-        
+
         // 批量保存所有结果
         System.out.println("开始批量保存，共 " + allItemsToSave.size() + " 条记录");
         saveItemsInBatches(allItemsToSave, saveBatchSize);
-        
+
         long endTime = System.currentTimeMillis();
         int finalMatchedCount = matchedCount.get();
         System.out.println("匹配完成，共匹配 " + finalMatchedCount + " 条，耗时: " + (endTime - startTime) + "ms");
-        
+
+        // AI 复核（无特定用户，传null）
+        submitAiReviewIfAvailable(allItemsToSave, allQuotas, quotaKeywordsCache, quotaNameCache, quotaFeatureCache, null);
+
         return finalMatchedCount;
     }
-    
+
     /**
      * 多线程并行匹配（优化版本，充分利用多核CPU）
      * 按用户ID过滤项目清单
@@ -302,18 +308,74 @@ public class QuotaMatchingService {
         // 合并所有结果
         List<ProjectItem> allItemsToSave = new ArrayList<>(allMatchedItems);
         allItemsToSave.addAll(itemsWithoutUnit);
-        
+
         // 批量保存所有结果
         System.out.println("开始批量保存，共 " + allItemsToSave.size() + " 条记录");
         saveItemsInBatches(allItemsToSave, saveBatchSize);
-        
+
         long endTime = System.currentTimeMillis();
         int finalMatchedCount = matchedCount.get();
         System.out.println("匹配完成，共匹配 " + finalMatchedCount + " 条，耗时: " + (endTime - startTime) + "ms");
-        
+
+        // AI 复核：收集模糊区间项目并提交异步复核
+        submitAiReviewIfAvailable(allItemsToSave, allQuotas, quotaKeywordsCache, quotaNameCache, quotaFeatureCache, userId);
+
         return finalMatchedCount;
     }
-    
+
+    /**
+     * 提交 AI 复核（如果 AiReviewService 可用）
+     */
+    private void submitAiReviewIfAvailable(List<ProjectItem> allItems, List<EnterpriseQuota> allQuotas,
+                                            Map<Long, List<String>> quotaKeywordsCache,
+                                            Map<Long, String> quotaNameCache,
+                                            Map<Long, String> quotaFeatureCache,
+                                            Long userId) {
+        if (aiReviewService == null || !aiReviewService.isAvailable()) {
+            return;
+        }
+
+        // 收集需要 AI 复核的项目：
+        // 1. 模糊区间项：matchStatus=1 且得分在 0.25~0.6
+        // 2. 未匹配项：matchStatus=0（关键词算法未找到，AI 从语义层面重新判断）
+        List<ProjectItem> fuzzyItems = new ArrayList<>();
+        for (ProjectItem item : allItems) {
+            // 跳过人工修正和多定额项
+            if (item.getMatchStatus() == null) continue;
+            if (item.getMatchStatus() == 2 || item.getMatchStatus() == 3) continue;
+            if (item.getUnit() == null || item.getUnit().trim().isEmpty()) continue;
+
+            // 提取关键词
+            List<String> itemKeywords = new ArrayList<>();
+            String itemName = item.getItemName() != null ? item.getItemName().trim() : "";
+            String itemFeature = item.getFeatureValue() != null ? item.getFeatureValue().trim() : "";
+            if (!itemName.isEmpty()) itemKeywords.addAll(KeywordExtractor.extractKeywords(itemName));
+            if (!itemFeature.isEmpty()) itemKeywords.addAll(KeywordExtractor.extractKeywords(itemFeature));
+            if (itemKeywords.isEmpty()) continue;
+
+            if (item.getMatchStatus() == 1 && item.getMatchedQuotaId() != null) {
+                // 模糊区间复核
+                List<String> quotaKeywords = quotaKeywordsCache.get(item.getMatchedQuotaId());
+                if (quotaKeywords == null) continue;
+                double score = KeywordExtractor.calculateSimilarity(itemKeywords, quotaKeywords);
+                if (aiReviewService.isInFuzzyRange(score)) {
+                    fuzzyItems.add(item);
+                }
+            } else if (item.getMatchStatus() == 0) {
+                // 未匹配项：直接进入 AI 复核队列（让 AI 从语义层面做匹配）
+                fuzzyItems.add(item);
+            }
+        }
+
+        if (!fuzzyItems.isEmpty()) {
+            int unmatchedCount = (int) fuzzyItems.stream().filter(i -> i.getMatchStatus() == 0).count();
+            System.out.println("提交 AI 复核，共 " + fuzzyItems.size() + " 条（模糊区间: "
+                    + (fuzzyItems.size() - unmatchedCount) + ", 未匹配: " + unmatchedCount + "）");
+            aiReviewService.reviewAsync(fuzzyItems, allQuotas, quotaKeywordsCache,
+                    quotaNameCache, quotaFeatureCache, userId);
+        }
+    }
+
     /**
      * 处理一个批次的匹配任务
      */
@@ -481,124 +543,6 @@ public class QuotaMatchingService {
         
         return null;
     }
-    
-    /**
-     * 使用双向匹配算法找到最佳匹配（保留原方法以兼容）
-     */
-    private EnterpriseQuota findBestMatchWithBidirectionalMatching(ProjectItem item, List<EnterpriseQuota> quotas) {
-        if (quotas.isEmpty()) {
-            return null;
-        }
-        
-        // 提取项目清单的关键词
-        List<String> itemKeywords = new ArrayList<>();
-        if (item.getItemName() != null && !item.getItemName().trim().isEmpty()) {
-            itemKeywords.addAll(KeywordExtractor.extractKeywords(item.getItemName()));
-        }
-        if (item.getFeatureValue() != null && !item.getFeatureValue().trim().isEmpty()) {
-            itemKeywords.addAll(KeywordExtractor.extractKeywords(item.getFeatureValue()));
-        }
-        
-        if (itemKeywords.isEmpty()) {
-            return null;
-        }
-        
-        // 计算每个定额的匹配得分
-        List<MatchScore> scores = new ArrayList<>();
-        
-        for (EnterpriseQuota quota : quotas) {
-            double score = calculateBidirectionalMatchScore(item, quota, itemKeywords);
-            if (score > 0) {
-                scores.add(new MatchScore(quota, score));
-            }
-        }
-        
-        // 如果没有匹配，返回null
-        if (scores.isEmpty()) {
-            return null;
-        }
-        
-        // 按得分排序，返回得分最高的（得分需大于阈值0.3）
-        scores.sort((a, b) -> Double.compare(b.score, a.score));
-        MatchScore bestMatch = scores.get(0);
-        
-        // 只返回得分大于阈值的匹配
-        if (bestMatch.score >= 0.3) {
-            return bestMatch.quota;
-        }
-        
-        return null;
-    }
-    
-    /**
-     * 计算双向匹配得分（优化版本，使用缓存和学习结果）
-     */
-    private double calculateBidirectionalMatchScoreWithLearning(ProjectItem item, EnterpriseQuota quota,
-                                                                 List<String> itemKeywords, String itemName, String itemFeature,
-                                                                 List<String> quotaKeywords, String quotaName, String quotaFeature,
-                                                                 Map<String, Double> learnedWeights) {
-        double score = 0.0;
-        double totalWeight = 0.0;
-        
-        // 方向1：从项目清单匹配到定额（权重0.7）
-        if (!itemName.isEmpty() && quotaName != null && !quotaName.isEmpty()) {
-            double nameScore = KeywordExtractor.calculateTextMatchScore(itemName, quotaName);
-            score += nameScore * 0.4;
-            totalWeight += 0.4;
-        }
-        
-        if (!itemFeature.isEmpty() && quotaFeature != null && !quotaFeature.isEmpty()) {
-            double featureScore = KeywordExtractor.calculateTextMatchScore(itemFeature, quotaFeature);
-            score += featureScore * 0.3;
-            totalWeight += 0.3;
-        }
-        
-        // 方向2：从定额匹配到项目清单（权重0.3，使用缓存的关键词和学习到的权重）
-        if (quotaKeywords != null && !quotaKeywords.isEmpty()) {
-            double keywordScore = calculateSimilarityWithLearning(itemKeywords, quotaKeywords, learnedWeights);
-            score += keywordScore * 0.3;
-            totalWeight += 0.3;
-        }
-        
-        // 归一化得分
-        if (totalWeight > 0) {
-            score = score / totalWeight;
-        }
-        
-        return score;
-    }
-    
-    /**
-     * 计算相似度（使用学习到的权重）
-     */
-    private double calculateSimilarityWithLearning(List<String> keywords1, List<String> keywords2, 
-                                                    Map<String, Double> learnedWeights) {
-        if (keywords1.isEmpty() || keywords2.isEmpty()) {
-            return 0.0;
-        }
-        
-        Set<String> set1 = new HashSet<>(keywords1);
-        Set<String> set2 = new HashSet<>(keywords2);
-        
-        double intersection = 0.0;
-        double totalWeight = 0.0;
-        
-        for (String k : set1) {
-            double weight = learnedWeights.getOrDefault(k, 1.0);
-            totalWeight += weight;
-            
-            if (set2.contains(k)) {
-                intersection += weight;
-            }
-        }
-        
-        if (totalWeight == 0) {
-            return 0.0;
-        }
-        
-        return intersection / totalWeight;
-    }
-    
     /**
      * 计算双向匹配得分（优化版本，使用缓存）
      */
@@ -637,50 +581,6 @@ public class QuotaMatchingService {
     }
     
     /**
-     * 计算双向匹配得分（原方法，保留以兼容）
-     */
-    private double calculateBidirectionalMatchScore(ProjectItem item, EnterpriseQuota quota, List<String> itemKeywords) {
-        double score = 0.0;
-        double totalWeight = 0.0;
-        
-        // 方向1：从项目清单匹配到定额（权重0.6）
-        if (item.getItemName() != null && !item.getItemName().trim().isEmpty()) {
-            double nameScore = KeywordExtractor.calculateTextMatchScore(item.getItemName(), quota.getQuotaName());
-            score += nameScore * 0.4;
-            totalWeight += 0.4;
-        }
-        
-        if (item.getFeatureValue() != null && !item.getFeatureValue().trim().isEmpty() 
-                && quota.getFeatureValue() != null && !quota.getFeatureValue().trim().isEmpty()) {
-            double featureScore = KeywordExtractor.calculateTextMatchScore(item.getFeatureValue(), quota.getFeatureValue());
-            score += featureScore * 0.3;
-            totalWeight += 0.3;
-        }
-        
-        // 方向2：从定额匹配到项目清单（权重0.3）
-        List<String> quotaKeywords = new ArrayList<>();
-        if (quota.getQuotaName() != null && !quota.getQuotaName().trim().isEmpty()) {
-            quotaKeywords.addAll(KeywordExtractor.extractKeywords(quota.getQuotaName()));
-        }
-        if (quota.getFeatureValue() != null && !quota.getFeatureValue().trim().isEmpty()) {
-            quotaKeywords.addAll(KeywordExtractor.extractKeywords(quota.getFeatureValue()));
-        }
-        
-        if (!quotaKeywords.isEmpty()) {
-            double keywordScore = KeywordExtractor.calculateSimilarity(itemKeywords, quotaKeywords);
-            score += keywordScore * 0.3;
-            totalWeight += 0.3;
-        }
-        
-        // 归一化得分
-        if (totalWeight > 0) {
-            score = score / totalWeight;
-        }
-        
-        return score;
-    }
-    
-    /**
      * 匹配得分内部类
      */
     private static class MatchScore {
@@ -691,14 +591,6 @@ public class QuotaMatchingService {
             this.quota = quota;
             this.score = score;
         }
-    }
-    
-    /**
-     * 兼容旧版本的匹配方法（不使用版本ID）
-     */
-    @Transactional
-    public int batchMatchQuotas() {
-        return batchMatchQuotas(null);
     }
     
     @Transactional

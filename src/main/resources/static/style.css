@@ -912,3 +912,102 @@ tbody tr:hover {
     visibility: visible !important;
     opacity: 1 !important;
 }
+
+/* ==================== AI 复核样式 ==================== */
+
+/* AI 复核按钮 */
+.btn-ai {
+    padding: 8px 18px;
+    background: linear-gradient(135deg, #7c4dff 0%, #651fff 100%);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+.btn-ai:hover:not(:disabled) {
+    background: linear-gradient(135deg, #651fff 0%, #4a0072 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(101, 31, 255, 0.4);
+}
+.btn-ai:disabled {
+    background: linear-gradient(135deg, #bdbdbd 0%, #9e9e9e 100%);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* AI 建议行高亮 */
+tr.ai-suggest-row {
+    background: #fff8e1 !important;
+    border-left: 4px solid #ff8f00 !important;
+}
+tr.ai-suggest-row:hover {
+    background: #fff3c4 !important;
+}
+tr.ai-suggest-row.selected-row {
+    background: #ffe0b2 !important;
+}
+
+/* AI 建议信息 */
+.ai-suggest-info {
+    font-size: 11px;
+    margin-top: 2px;
+    padding: 2px 4px;
+    background: rgba(255, 143, 0, 0.08);
+    border-radius: 3px;
+    display: inline-block;
+}
+.ai-label {
+    font-weight: bold;
+    color: #e65100;
+}
+.confidence-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: bold;
+    margin-left: 4px;
+}
+.confidence-badge.conf-high {
+    background: #c8e6c9;
+    color: #2e7d32;
+}
+.confidence-badge.conf-medium {
+    background: #fff9c4;
+    color: #f57f17;
+}
+.confidence-badge.conf-low {
+    background: #ffcdd2;
+    color: #c62828;
+}
+.ai-reasoning {
+    display: block;
+    font-size: 10px;
+    color: #888;
+    margin-top: 1px;
+}
+
+/* AI 状态标记 */
+.status-badge.status-ai-suggest {
+    background: linear-gradient(135deg, #fff8e1 0%, #ffe0b2 100%);
+    color: #e65100;
+    border: 1px solid #ff8f00;
+}
+
+/* 接受/拒绝按钮 */
+.action-btn.accept-btn {
+    background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
+}
+.action-btn.accept-btn:hover {
+    background: linear-gradient(135deg, #1b5e20 0%, #0d3b0f 100%);
+}
+.action-btn.reject-btn {
+    background: linear-gradient(135deg, #c62828 0%, #8e0000 100%);
+}
+.action-btn.reject-btn:hover {
+    background: linear-gradient(135deg, #8e0000 0%, #5c0000 100%);
+}

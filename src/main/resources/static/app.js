@@ -23,6 +23,7 @@ window.onload = function() {
             loadUsers(); // 加载用户列表
             loadDocumentTemplates(); // 加载文档模板列表
             loadReplacementTemplates(); // 加载替换内容模板列表
+            checkAIStatus(); // 检查AI复核状态
         }, 100);
         
         // 确保表格容器可以正常滚动
@@ -219,29 +220,32 @@ async function matchQuotas() {
     const statusSpan = document.getElementById('matchStatus');
     const versionSelect = document.getElementById('versionSelect');
     const versionId = versionSelect.value;
-    
+
     // 检查是否选择了版本
     if (!versionId) {
         statusSpan.textContent = '请先选择定额版本';
         statusSpan.className = 'status-message status-error';
         return;
     }
-    
+
     statusSpan.textContent = '匹配中...';
     statusSpan.className = 'status-message';
-    
+
     try {
         const url = API_BASE + '/match?versionId=' + versionId;
         const response = await fetch(url, {
             method: 'POST'
         });
-        
+
         const result = await response.json();
-        
+
         if (result.success) {
             statusSpan.textContent = result.message;
             statusSpan.className = 'status-message status-success';
             loadItems();
+
+            // 匹配完成后自动触发 AI 复核
+            setTimeout(() => startAiReview(true), 500);
         } else {
             statusSpan.textContent = result.message;
             statusSpan.className = 'status-message status-error';
@@ -249,6 +253,108 @@ async function matchQuotas() {
     } catch (error) {
         statusSpan.textContent = '匹配失败：' + error.message;
         statusSpan.className = 'status-message status-error';
+    }
+}
+
+/** 启动 AI 复核 */
+async function startAiReview(autoMode) {
+    const aiStatus = document.getElementById('aiReviewStatus');
+    const aiBtn = document.getElementById('aiReviewBtn');
+
+    if (!aiBtn || aiBtn.disabled) return;
+
+    const versionSelect = document.getElementById('versionSelect');
+    const versionId = versionSelect ? versionSelect.value : '';
+
+    if (autoMode) {
+        aiStatus.textContent = 'AI复核启动中...';
+    }
+    aiStatus.className = '';
+    aiBtn.disabled = true;
+    aiBtn.textContent = '复核中...';
+
+    try {
+        const url = '/api/ai/review?versionId=' + (versionId || '');
+        const response = await fetch(url, { method: 'POST' });
+        const result = await response.json();
+
+        if (result.success) {
+            aiStatus.textContent = result.message;
+            aiStatus.style.color = result.changedCount > 0 ? '#e65100' : '#2e7d32';
+            loadItems();
+        } else {
+            aiStatus.textContent = result.message || 'AI复核失败';
+            aiStatus.style.color = '#c62828';
+        }
+    } catch (error) {
+        if (!autoMode) {
+            aiStatus.textContent = 'AI复核失败：' + error.message;
+            aiStatus.style.color = '#c62828';
+        } else {
+            aiStatus.textContent = '';
+        }
+    } finally {
+        aiBtn.disabled = false;
+        aiBtn.textContent = 'AI复核';
+    }
+}
+
+/** 接受 AI 建议 */
+async function acceptAiSuggestion(itemId) {
+    if (!confirm('确定要接受AI的建议吗？将更新此清单项的匹配定额。')) return;
+    try {
+        const response = await fetch('/api/ai/accept/' + itemId, { method: 'POST' });
+        const result = await response.json();
+        if (result.success) {
+            loadItems();
+        } else {
+            alert(result.message);
+        }
+    } catch (error) {
+        alert('操作失败：' + error.message);
+    }
+}
+
+/** 拒绝 AI 建议 */
+async function rejectAiSuggestion(itemId) {
+    if (!confirm('确定要拒绝AI的建议吗？将恢复原来的匹配结果。')) return;
+    try {
+        const response = await fetch('/api/ai/reject/' + itemId, { method: 'POST' });
+        const result = await response.json();
+        if (result.success) {
+            loadItems();
+        } else {
+            alert(result.message);
+        }
+    } catch (error) {
+        alert('操作失败：' + error.message);
+    }
+}
+
+/** 检查 AI 状态并更新按钮 */
+async function checkAIStatus() {
+    try {
+        const response = await fetch('/api/ai/status');
+        const result = await response.json();
+        const aiBtn = document.getElementById('aiReviewBtn');
+        if (aiBtn) {
+            if (result.enabled) {
+                aiBtn.disabled = false;
+                aiBtn.title = '对模糊区间的匹配结果进行AI复核';
+            } else {
+                aiBtn.disabled = true;
+                aiBtn.title = 'AI复核未配置API Key，请设置DEEPSEEK_API_KEY环境变量';
+            }
+        }
+        const aiStatus = document.getElementById('aiReviewStatus');
+        if (aiStatus && result.tokenUsage && result.tokenUsage.totalCalls > 0) {
+            aiStatus.textContent = 'Token: ' + (result.tokenUsage.totalTokens || 0);
+            aiStatus.style.color = '#888';
+        }
+    } catch (e) {
+        // AI 端点不可用
+        const aiBtn = document.getElementById('aiReviewBtn');
+        if (aiBtn) { aiBtn.disabled = true; aiBtn.title = 'AI复核服务不可用'; }
     }
 }
 
@@ -326,12 +432,14 @@ function renderItemsTable(items) {
     let totalAmount = 0;
     
     tbody.innerHTML = items.map((item, index) => {
-        const statusClass = item.matchStatus === 1 ? 'status-matched' : 
-                           item.matchStatus === 2 ? 'status-manual' : 
-                           item.matchStatus === 3 ? 'status-multi' : 'status-unmatched';
-        const statusText = item.matchStatus === 1 ? '已匹配' : 
-                          item.matchStatus === 2 ? '手动修改' : 
-                          item.matchStatus === 3 ? '多定额匹配' : '未匹配';
+        const statusClass = item.matchStatus === 1 ? 'status-matched' :
+                           item.matchStatus === 2 ? 'status-manual' :
+                           item.matchStatus === 3 ? 'status-multi' :
+                           item.matchStatus === 4 ? 'status-ai-suggest' : 'status-unmatched';
+        const statusText = item.matchStatus === 1 ? '已匹配' :
+                          item.matchStatus === 2 ? '手动修改' :
+                          item.matchStatus === 3 ? '多定额匹配' :
+                          item.matchStatus === 4 ? 'AI建议复核' : '未匹配';
         
         // 如果是多定额匹配，显示所有定额的详细信息
         let quotaDisplay = '';
@@ -356,10 +464,27 @@ function renderItemsTable(items) {
         }
         
         const isSelected = selectedItemIds.has(item.id);
+        const isAiSuggest = item.matchStatus === 4;
+        const rowClass = isAiSuggest ? 'ai-suggest-row' : (selectedRowIndex === index ? 'selected-row' : '');
+
+        // AI 建议信息
+        let aiSuggestHtml = '';
+        if (isAiSuggest && item.aiSuggestQuotaName) {
+            const confidencePercent = item.aiSuggestConfidence ? Math.round(item.aiSuggestConfidence * 100) : 0;
+            const confClass = confidencePercent >= 80 ? 'conf-high' : confidencePercent >= 60 ? 'conf-medium' : 'conf-low';
+            aiSuggestHtml = `
+                <div class="ai-suggest-info">
+                    <span class="ai-label">🤖 AI建议：</span>
+                    <span>${item.aiSuggestQuotaCode || ''} ${item.aiSuggestQuotaName || ''}</span>
+                    <span class="confidence-badge ${confClass}">${confidencePercent}%</span>
+                    ${item.aiSuggestReasoning ? `<span class="ai-reasoning" title="${item.aiSuggestReasoning}">${item.aiSuggestReasoning}</span>` : ''}
+                </div>`;
+        }
+
         return `
-            <tr data-item-id="${item.id}" onclick="selectTableRow(this, ${index})" class="${selectedRowIndex === index ? 'selected-row' : ''}">
+            <tr data-item-id="${item.id}" onclick="selectTableRow(this, ${index})" class="${rowClass}">
                 <td style="text-align: center;">
-                    <input type="checkbox" ${isSelected ? 'checked' : ''} 
+                    <input type="checkbox" ${isSelected ? 'checked' : ''}
                            onchange="toggleItemSelection(${item.id}, this.checked)">
                 </td>
                 <td style="text-align: center; font-weight: bold;">${index + 1}</td>
@@ -369,13 +494,17 @@ function renderItemsTable(items) {
                 <td class="editable-cell" data-field="unit" data-item-id="${item.id}" title="双击编辑">${item.unit || ''}</td>
                 <td class="editable-cell" data-field="quantity" data-item-id="${item.id}" data-type="number" title="双击编辑">${item.quantity || 0}</td>
                 <td class="editable-cell" data-field="remark" data-item-id="${item.id}" title="双击编辑">${item.remark || ''}</td>
-                <td style="vertical-align: top;">${quotaDisplay}</td>
+                <td style="vertical-align: top;">${quotaDisplay}${aiSuggestHtml}</td>
                 <td style="vertical-align: top;">${quotaNameDisplay}</td>
                 <td style="vertical-align: top;">${quotaFeatureDisplay}</td>
                 <td>${item.matchedUnitPrice || 0}</td>
                 <td>${item.totalPrice || 0}</td>
                 <td><span class="status-badge ${statusClass}">${statusText}</span></td>
                 <td>
+                    ${isAiSuggest ? `
+                    <button class="action-btn accept-btn" onclick="event.stopPropagation(); acceptAiSuggestion(${item.id})" title="接受AI建议">✓接受</button>
+                    <button class="action-btn reject-btn" onclick="event.stopPropagation(); rejectAiSuggestion(${item.id})" title="拒绝AI建议">✗拒绝</button>
+                    ` : ''}
                     <button class="action-btn" onclick="openEditModal(${item.id})">
                         匹配定额
                     </button>

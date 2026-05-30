@@ -63,7 +63,9 @@
                         <option value="">请选择版本</option>
                     </select>
                     <button onclick="matchQuotas()" class="btn-primary">开始匹配</button>
+                    <button onclick="startAiReview()" class="btn-ai" id="aiReviewBtn" disabled title="AI复核需要在匹配完成后使用">AI复核</button>
                     <span id="matchStatus"></span>
+                    <span id="aiReviewStatus" style="font-size: 12px; color: #888; margin-left: 8px;"></span>
                     <button onclick="exportData()" class="btn-success">导出结果</button>
                     <button onclick="clearAll()" class="btn-danger">清空数据</button>
                 </div>

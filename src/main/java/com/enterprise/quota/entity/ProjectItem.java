@@ -49,10 +49,29 @@ public class ProjectItem {
     
     @Column(name = "match_status")
     private Integer matchStatus = 0;
-    
+
+    // AI 复核建议字段
+    @Column(name = "ai_suggest_quota_id")
+    private Long aiSuggestQuotaId;
+
+    @Column(name = "ai_suggest_quota_code", length = 100)
+    private String aiSuggestQuotaCode;
+
+    @Column(name = "ai_suggest_quota_name", columnDefinition = "LONGTEXT")
+    private String aiSuggestQuotaName;
+
+    @Column(name = "ai_suggest_quota_feature_value", columnDefinition = "LONGTEXT")
+    private String aiSuggestQuotaFeatureValue;
+
+    @Column(name = "ai_suggest_confidence")
+    private Double aiSuggestConfidence;
+
+    @Column(name = "ai_suggest_reasoning", columnDefinition = "LONGTEXT")
+    private String aiSuggestReasoning;
+
     @Column(name = "remark", columnDefinition = "LONGTEXT")
     private String remark;
-    
+
     @Column(name = "sort_order")
     private Integer sortOrder;
 
@@ -84,6 +103,18 @@ public class ProjectItem {
     public void setTotalPrice(BigDecimal totalPrice) { this.totalPrice = totalPrice; }
     public Integer getMatchStatus() { return matchStatus; }
     public void setMatchStatus(Integer matchStatus) { this.matchStatus = matchStatus; }
+    public Long getAiSuggestQuotaId() { return aiSuggestQuotaId; }
+    public void setAiSuggestQuotaId(Long aiSuggestQuotaId) { this.aiSuggestQuotaId = aiSuggestQuotaId; }
+    public String getAiSuggestQuotaCode() { return aiSuggestQuotaCode; }
+    public void setAiSuggestQuotaCode(String aiSuggestQuotaCode) { this.aiSuggestQuotaCode = aiSuggestQuotaCode; }
+    public String getAiSuggestQuotaName() { return aiSuggestQuotaName; }
+    public void setAiSuggestQuotaName(String aiSuggestQuotaName) { this.aiSuggestQuotaName = aiSuggestQuotaName; }
+    public String getAiSuggestQuotaFeatureValue() { return aiSuggestQuotaFeatureValue; }
+    public void setAiSuggestQuotaFeatureValue(String aiSuggestQuotaFeatureValue) { this.aiSuggestQuotaFeatureValue = aiSuggestQuotaFeatureValue; }
+    public Double getAiSuggestConfidence() { return aiSuggestConfidence; }
+    public void setAiSuggestConfidence(Double aiSuggestConfidence) { this.aiSuggestConfidence = aiSuggestConfidence; }
+    public String getAiSuggestReasoning() { return aiSuggestReasoning; }
+    public void setAiSuggestReasoning(String aiSuggestReasoning) { this.aiSuggestReasoning = aiSuggestReasoning; }
     public String getRemark() { return remark; }
     public void setRemark(String remark) { this.remark = remark; }
     public Integer getSortOrder() { return sortOrder; }
