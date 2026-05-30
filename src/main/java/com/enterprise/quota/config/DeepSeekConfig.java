@@ -6,10 +6,12 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import javax.annotation.PostConstruct;
 import java.util.concurrent.TimeUnit;
 
 /**
  * DeepSeek API 配置类
+ * 支持从 application.properties 或环境变量 DEEPSEEK_API_KEY 读取
  */
 @Configuration
 @ConfigurationProperties(prefix = "deepseek")
@@ -26,6 +28,20 @@ public class DeepSeekConfig {
     private int itemsPerBatchPrompt = 10;
     private boolean enabled = true;
     private int rateLimitRpm = 60;
+
+    @PostConstruct
+    public void init() {
+        // 兜底：如果 @ConfigurationProperties 没绑上，直接从环境变量读
+        if (apiKey == null || apiKey.trim().isEmpty()) {
+            apiKey = System.getenv("DEEPSEEK_API_KEY");
+        }
+        System.out.println("DeepSeek 配置初始化: enabled=" + enabled + ", apiKey=" + maskApiKey(apiKey));
+    }
+
+    private String maskApiKey(String key) {
+        if (key == null || key.length() < 8) return "***EMPTY***";
+        return key.substring(0, 4) + "****" + key.substring(key.length() - 4);
+    }
 
     @Bean
     public OkHttpClient deepSeekHttpClient() {

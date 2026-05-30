@@ -6,7 +6,7 @@ After=network.target mysql.service
 Type=simple
 User=root
 WorkingDirectory=/opt/quota-matching-tool
-ExecStart=/usr/bin/java -Xms512m -Xmx1024m -XX:+UseG1GC -Djava.awt.headless=true -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /opt/quota-matching-tool/target/quota-matching-tool-1.0.0.jar --spring.profiles.active=prod
+ExecStart=/usr/bin/java -Xms512m -Xmx1024m -XX:+UseG1GC -Djava.awt.headless=true -Dfile.encoding=UTF-8 -Duser.timezone=Asia/Shanghai -jar /opt/quota-matching-tool/quota-matching-tool-1.0.0.jar --spring.profiles.active=prod
 ExecStop=/bin/kill -15 $MAINPID
 Restart=always
 RestartSec=10
@@ -20,6 +20,7 @@ Environment="DB_NAME=quota_db"
 Environment="DB_USERNAME=root"
 Environment="DB_PASSWORD="
 Environment="LOG_PATH=/var/log/quota-matching-tool"
+Environment="DEEPSEEK_API_KEY=sk-1bdcd436d5624981b7ab8b86c2c4c5d4"
 
 [Install]
 WantedBy=multi-user.target
