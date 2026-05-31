@@ -135,7 +135,26 @@ public class AiReviewController {
     public ResponseEntity<Map<String, Object>> aiStatus() {
         Map<String, Object> result = new HashMap<>();
         result.put("enabled", aiReviewService.isAvailable());
+        result.put("running", aiReviewService.isRunning());
+        result.put("progress", aiReviewService.getProgress());
         result.put("tokenUsage", tokenTracker.getStats());
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 手动停止 AI 复核
+     */
+    @PostMapping("/cancel")
+    public ResponseEntity<Map<String, Object>> cancelReview() {
+        Map<String, Object> result = new HashMap<>();
+        if (!aiReviewService.isRunning()) {
+            result.put("success", false);
+            result.put("message", "没有正在运行的 AI 复核");
+            return ResponseEntity.ok(result);
+        }
+        aiReviewService.cancelReview();
+        result.put("success", true);
+        result.put("message", "已发送停止请求，当前批次完成后停止");
         return ResponseEntity.ok(result);
     }
 

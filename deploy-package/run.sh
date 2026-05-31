@@ -41,7 +41,7 @@ SPRING_OPTS="--spring.profiles.active=$PROFILE"
 # 启动应用
 echo "正在启动应用..."
 echo ""
-export DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-sk-1bdcd436d5624981b7ab8b86c2c4c5d4}
+# DEEPSEEK_API_KEY 由服务器环境变量提供
 java $JVM_OPTS -jar "$JAR_FILE" $SPRING_OPTS
 
 if [ $? -ne 0 ]; then

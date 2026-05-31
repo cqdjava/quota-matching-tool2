@@ -243,9 +243,12 @@ async function matchQuotas() {
             statusSpan.textContent = result.message;
             statusSpan.className = 'status-message status-success';
             loadItems();
-
-            // 匹配完成后自动触发 AI 复核
-            setTimeout(() => startAiReview(true), 500);
+            // AI 复核已由后端自动触发，前端开始轮询进度
+            setTimeout(() => {
+                aiWasRunning = true; // 假设后端已触发，避免错过状态
+                if (aiPollTimer) clearInterval(aiPollTimer);
+                aiPollTimer = setInterval(checkAIStatus, 2000);
+            }, 300);
         } else {
             statusSpan.textContent = result.message;
             statusSpan.className = 'status-message status-error';
@@ -256,8 +259,8 @@ async function matchQuotas() {
     }
 }
 
-/** 启动 AI 复核 */
-async function startAiReview(autoMode) {
+/** 启动 AI 复核（手动触发） */
+async function startAiReview() {
     const aiStatus = document.getElementById('aiReviewStatus');
     const aiBtn = document.getElementById('aiReviewBtn');
 
@@ -266,12 +269,8 @@ async function startAiReview(autoMode) {
     const versionSelect = document.getElementById('versionSelect');
     const versionId = versionSelect ? versionSelect.value : '';
 
-    if (autoMode) {
-        aiStatus.textContent = 'AI复核启动中...';
-    }
-    aiStatus.className = '';
     aiBtn.disabled = true;
-    aiBtn.textContent = '复核中...';
+    aiBtn.textContent = '提交中...';
 
     try {
         const url = '/api/ai/review?versionId=' + (versionId || '');
@@ -279,23 +278,39 @@ async function startAiReview(autoMode) {
         const result = await response.json();
 
         if (result.success) {
-            aiStatus.textContent = result.message;
-            aiStatus.style.color = result.changedCount > 0 ? '#e65100' : '#2e7d32';
-            loadItems();
+            aiStatus.textContent = '已提交，后台处理中...';
+            aiStatus.style.color = '#888';
+            // 开始轮询进度
+            aiWasRunning = true;
+            if (aiPollTimer) clearInterval(aiPollTimer);
+            aiPollTimer = setInterval(checkAIStatus, 2000);
         } else {
             aiStatus.textContent = result.message || 'AI复核失败';
             aiStatus.style.color = '#c62828';
+            aiBtn.disabled = false;
+            aiBtn.textContent = 'AI复核';
         }
     } catch (error) {
-        if (!autoMode) {
-            aiStatus.textContent = 'AI复核失败：' + error.message;
-            aiStatus.style.color = '#c62828';
-        } else {
-            aiStatus.textContent = '';
-        }
-    } finally {
+        aiStatus.textContent = 'AI复核请求失败';
+        aiStatus.style.color = '#c62828';
         aiBtn.disabled = false;
         aiBtn.textContent = 'AI复核';
+    }
+}
+
+/** 手动停止 AI 复核 */
+async function cancelAiReview() {
+    if (!confirm('确定要停止当前的 AI 复核吗？已完成的批次不会回退。')) return;
+    try {
+        const response = await fetch('/api/ai/cancel', { method: 'POST' });
+        const result = await response.json();
+        const aiStatus = document.getElementById('aiReviewStatus');
+        if (aiStatus) {
+            aiStatus.textContent = result.message;
+            aiStatus.style.color = '#888';
+        }
+    } catch (error) {
+        console.error('停止AI复核失败：', error);
     }
 }
 
@@ -331,25 +346,72 @@ async function rejectAiSuggestion(itemId) {
     }
 }
 
+/** AI 轮询定时器 */
+let aiPollTimer = null;
+/** 上次 running 状态（用于检测完成） */
+let aiWasRunning = false;
+
 /** 检查 AI 状态并更新按钮 */
 async function checkAIStatus() {
     try {
         const response = await fetch('/api/ai/status');
         const result = await response.json();
         const aiBtn = document.getElementById('aiReviewBtn');
-        if (aiBtn) {
-            if (result.enabled) {
-                aiBtn.disabled = false;
-                aiBtn.title = '对模糊区间的匹配结果进行AI复核';
-            } else {
-                aiBtn.disabled = true;
-                aiBtn.title = 'AI复核未配置API Key，请设置DEEPSEEK_API_KEY环境变量';
-            }
-        }
         const aiStatus = document.getElementById('aiReviewStatus');
-        if (aiStatus && result.tokenUsage && result.tokenUsage.totalCalls > 0) {
-            aiStatus.textContent = 'Token: ' + (result.tokenUsage.totalTokens || 0);
-            aiStatus.style.color = '#888';
+        const progress = result.progress || {};
+
+        const stopBtn = document.getElementById('aiStopBtn');
+
+        if (result.running) {
+            // 复核运行中 → 按钮变灰 + 显示进度 + 显示停止按钮
+            aiWasRunning = true;
+            if (aiBtn) {
+                aiBtn.disabled = true;
+                aiBtn.textContent = '复核中...';
+                aiBtn.title = 'AI复核正在运行中';
+            }
+            if (stopBtn) stopBtn.style.display = 'inline-block';
+            if (aiStatus) {
+                const pct = progress.percent || 0;
+                aiStatus.textContent = '复核中 ' + pct + '% (批次 '
+                    + (progress.currentBatch || 0) + '/' + (progress.totalBatches || 0)
+                    + ', ' + (progress.processedItems || 0) + '/' + (progress.totalItems || 0) + ' 条)';
+                aiStatus.style.color = '#e65100';
+            }
+            // 继续轮询
+            if (!aiPollTimer) {
+                aiPollTimer = setInterval(checkAIStatus, 2000);
+            }
+        } else {
+            // 不在运行 → 隐藏停止按钮
+            if (aiBtn) {
+                aiBtn.textContent = 'AI复核';
+                if (result.enabled) {
+                    aiBtn.disabled = false;
+                    aiBtn.title = '对模糊区间和未匹配的清单项进行AI复核';
+                } else {
+                    aiBtn.disabled = true;
+                    aiBtn.title = 'AI复核未配置API Key，请设置DEEPSEEK_API_KEY环境变量';
+                }
+            }
+            if (stopBtn) stopBtn.style.display = 'none';
+            // 刚完成 → 刷新列表 + 显示统计
+            if (aiWasRunning) {
+                aiWasRunning = false;
+                if (aiStatus) {
+                    aiStatus.textContent = '复核完成，变更 ' + (progress.changedItems || 0) + ' 条';
+                    aiStatus.style.color = (progress.changedItems > 0) ? '#e65100' : '#2e7d32';
+                }
+                loadItems();
+            } else if (aiStatus && result.tokenUsage && result.tokenUsage.totalCalls > 0) {
+                aiStatus.textContent = 'Token: ' + (result.tokenUsage.totalTokens || 0);
+                aiStatus.style.color = '#888';
+            }
+            // 停止轮询
+            if (aiPollTimer) {
+                clearInterval(aiPollTimer);
+                aiPollTimer = null;
+            }
         }
     } catch (e) {
         // AI 端点不可用

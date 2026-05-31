@@ -68,7 +68,7 @@ SPRING_OPTS="$SPRING_OPTS --logging.file.name=${LOG_DIR}/application.log"
 
 # 启动应用
 echo "正在启动应用..."
-export DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-sk-1bdcd436d5624981b7ab8b86c2c4c5d4}
+# DEEPSEEK_API_KEY 由服务器环境变量提供
 nohup $JAVA_CMD $JVM_OPTS -jar "$JAR_FILE" $SPRING_OPTS > "${LOG_DIR}/startup.log" 2>&1 &
 
 # 保存PID

@@ -31,6 +31,56 @@ import java.util.regex.Pattern;
 @Service
 public class AiReviewService {
 
+    /** 防重入锁：true 表示正在执行 AI 复核 */
+    private volatile boolean running = false;
+
+    /** 取消标志：前端手动停止 */
+    private volatile boolean cancelled = false;
+
+    /** 进度追踪 */
+    private volatile int totalItems = 0;
+    private volatile int processedItems = 0;
+    private volatile int currentBatch = 0;
+    private volatile int totalBatches = 0;
+    private volatile int changedItems = 0;
+
+    /** 是否正在运行中 */
+    public boolean isRunning() { return running; }
+
+    /** 停止正在运行的 AI 复核 */
+    public void cancelReview() {
+        if (running) {
+            cancelled = true;
+            System.out.println("[AI复核] 收到手动停止请求");
+        }
+    }
+
+    /** 获取复核进度 */
+    public Map<String, Object> getProgress() {
+        Map<String, Object> progress = new LinkedHashMap<>();
+        progress.put("running", running);
+        progress.put("totalItems", totalItems);
+        progress.put("processedItems", processedItems);
+        progress.put("currentBatch", currentBatch);
+        progress.put("totalBatches", totalBatches);
+        progress.put("changedItems", changedItems);
+        if (totalBatches > 0) {
+            progress.put("percent", Math.min(100, processedItems * 100 / Math.max(1, totalItems)));
+        } else {
+            progress.put("percent", 0);
+        }
+        return progress;
+    }
+
+    private void resetProgress() {
+        totalItems = 0;
+        processedItems = 0;
+        currentBatch = 0;
+        totalBatches = 0;
+        changedItems = 0;
+        cancelled = false;
+    }
+
     @Autowired
     private DeepSeekConfig config;
 
@@ -93,8 +143,8 @@ public class AiReviewService {
         try {
             reviewItems(items, allQuotas, quotaKeywordsCache, quotaNameCache, quotaFeatureCache, userId);
         } catch (Exception e) {
-            System.err.println("AI 复核失败: " + e.getMessage());
-            e.printStackTrace();
+            System.out.println("[AI复核] 异步执行失败: " + e.getMessage());
+            e.printStackTrace(System.out);
         }
     }
 
@@ -108,7 +158,7 @@ public class AiReviewService {
                            Map<Long, String> quotaFeatureCache,
                            Long userId) {
         if (!config.isEnabled() || !config.isApiKeyConfigured()) {
-            System.out.println("AI 复核未启用或 API Key 未配置");
+            System.out.println("[AI复核] 未启用或 API Key 未配置");
             return 0;
         }
 
@@ -116,45 +166,116 @@ public class AiReviewService {
             return 0;
         }
 
-        System.out.println("开始 AI 复核，共 " + items.size() + " 条清单项");
+        if (running) {
+            System.out.println("[AI复核] 已有复核正在运行，跳过本次请求");
+            return 0;
+        }
 
-        // 1. 为每个 item 预筛选 Top-N 候选定额并构建请求
-        List<AiReviewRequest.AiReviewItem> reviewItems = new ArrayList<>();
+        running = true;
+        try {
+            return doReviewItems(items, allQuotas, quotaKeywordsCache, quotaNameCache, quotaFeatureCache, userId);
+        } finally {
+            running = false;
+        }
+    }
+
+    private int doReviewItems(List<ProjectItem> items, List<EnterpriseQuota> allQuotas,
+                              Map<Long, List<String>> quotaKeywordsCache,
+                              Map<Long, String> quotaNameCache,
+                              Map<Long, String> quotaFeatureCache,
+                              Long userId) {
+        resetProgress();
+        totalItems = items.size();
+        System.out.println("[AI复核] 开始，共 " + totalItems + " 条清单项");
+
+        long t0 = System.currentTimeMillis();
+
+        // 1. 预提取所有清单项关键词（避免每条重复提取 2-3 次）
+        System.out.println("[AI复核] 预提取清单项关键词...");
+        Map<Long, List<String>> itemKeywordsCache = new HashMap<>(items.size());
+        Map<Long, String> itemNameCache = new HashMap<>(items.size());
+        Map<Long, String> itemFeatureCache = new HashMap<>(items.size());
         for (ProjectItem item : items) {
+            List<String> keywords = new ArrayList<>();
+            String itemName = item.getItemName() != null ? item.getItemName().trim() : "";
+            String itemFeature = item.getFeatureValue() != null ? item.getFeatureValue().trim() : "";
+            if (!itemName.isEmpty()) keywords.addAll(KeywordExtractor.extractKeywords(itemName));
+            if (!itemFeature.isEmpty()) keywords.addAll(KeywordExtractor.extractKeywords(itemFeature));
+            itemKeywordsCache.put(item.getId(), keywords);
+            itemNameCache.put(item.getId(), itemName);
+            itemFeatureCache.put(item.getId(), itemFeature);
+        }
+
+        // 预构建定额关键词 HashSet（避免每条调用 calculateSimilarity 重复创建 Set）
+        Map<Long, Set<String>> quotaKeywordsSetCache = new HashMap<>(quotaKeywordsCache.size());
+        for (Map.Entry<Long, List<String>> entry : quotaKeywordsCache.entrySet()) {
+            quotaKeywordsSetCache.put(entry.getKey(), new HashSet<>(entry.getValue()));
+        }
+
+        System.out.println("[AI复核] 预提取完成，耗时 " + (System.currentTimeMillis() - t0) + "ms，开始预筛选...");
+
+        // 2. 为每个 item 预筛选 Top-N 候选定额并构建请求
+        long t1 = System.currentTimeMillis();
+        List<AiReviewRequest.AiReviewItem> reviewItems = new ArrayList<>(items.size());
+        for (int idx = 0; idx < items.size(); idx++) {
+            ProjectItem item = items.get(idx);
+            List<String> itemKw = itemKeywordsCache.getOrDefault(item.getId(), Collections.emptyList());
             AiReviewRequest.AiReviewItem reviewItem = buildReviewItem(item, allQuotas,
-                    quotaKeywordsCache, quotaNameCache, quotaFeatureCache);
+                    quotaKeywordsCache, quotaKeywordsSetCache, quotaNameCache, quotaFeatureCache,
+                    itemKw, itemNameCache.get(item.getId()), itemFeatureCache.get(item.getId()));
             if (reviewItem != null) {
                 reviewItems.add(reviewItem);
             }
+            // 每 50 条打印一次进度
+            if ((idx + 1) % 50 == 0) {
+                System.out.println("[AI复核] 预筛选进度: " + (idx + 1) + "/" + items.size());
+            }
         }
+        System.out.println("[AI复核] 预筛选完成，有效项: " + reviewItems.size() + "/" + items.size()
+                + "，耗时 " + (System.currentTimeMillis() - t1) + "ms");
 
         if (reviewItems.isEmpty()) {
+            System.out.println("[AI复核] 无有效候选，终止");
             return 0;
         }
 
         // 2. 按每批 itemsPerBatchPrompt 分组
         int batchSize = config.getItemsPerBatchPrompt();
+        totalBatches = (int) Math.ceil((double) reviewItems.size() / batchSize);
         int totalReviewed = 0;
 
+        System.out.println("[AI复核] 开始批量调用 DeepSeek API，共 " + totalBatches + " 批...");
         for (int i = 0; i < reviewItems.size(); i += batchSize) {
             int end = Math.min(i + batchSize, reviewItems.size());
             List<AiReviewRequest.AiReviewItem> batch = reviewItems.subList(i, end);
+            currentBatch = i / batchSize + 1;
 
+            // 检查是否被手动停止
+            if (cancelled) {
+                System.out.println("[AI复核] 已手动停止，当前批次 " + currentBatch + "/" + totalBatches);
+                break;
+            }
+
+            System.out.println("[AI复核] 批次 " + currentBatch + "/" + totalBatches + " 开始 (" + batch.size() + " 条)...");
             try {
                 int reviewed = processBatch(batch, userId);
                 totalReviewed += reviewed;
+                changedItems += reviewed;
+                processedItems += batch.size();
+                System.out.println("[AI复核] 批次 " + currentBatch + "/" + totalBatches + " 完成，变更 " + reviewed + " 条");
 
                 // 速率控制：每批之间间隔 1 秒
                 if (end < reviewItems.size()) {
                     Thread.sleep(1000);
                 }
             } catch (Exception e) {
-                System.err.println("AI 复核批次 " + (i / batchSize + 1) + " 失败: " + e.getMessage());
+                System.out.println("[AI复核] 批次 " + currentBatch + "/" + totalBatches + " 失败: " + e.getMessage());
+                e.printStackTrace(System.out);
                 tokenTracker.recordFailure();
             }
         }
 
-        System.out.println("AI 复核完成，共复核 " + totalReviewed + " 条");
+        System.out.println("[AI复核] " + (cancelled ? "已手动停止" : "全部完成") + "，共复核 " + totalReviewed + " 条");
         return totalReviewed;
     }
 
@@ -193,8 +314,10 @@ public class AiReviewService {
      */
     private AiReviewRequest.AiReviewItem buildReviewItem(ProjectItem item, List<EnterpriseQuota> allQuotas,
                                                           Map<Long, List<String>> quotaKeywordsCache,
+                                                          Map<Long, Set<String>> quotaKeywordsSetCache,
                                                           Map<Long, String> quotaNameCache,
-                                                          Map<Long, String> quotaFeatureCache) {
+                                                          Map<Long, String> quotaFeatureCache,
+                                                          List<String> itemKeywords, String itemName, String itemFeature) {
         AiReviewRequest.AiReviewItem reviewItem = new AiReviewRequest.AiReviewItem();
         reviewItem.setItemId(item.getId());
         reviewItem.setItemCode(item.getItemCode());
@@ -207,61 +330,91 @@ public class AiReviewService {
         reviewItem.setOriginalQuotaName(item.getMatchedQuotaName());
 
         // 预筛选 Top-N 候选定额
-        List<AiReviewRequest.CandidateQuota> candidates = filterTopCandidates(item, allQuotas,
-                quotaKeywordsCache, quotaNameCache, quotaFeatureCache, config.getCandidatesPerItem());
+        List<AiReviewRequest.CandidateQuota> candidates = filterTopCandidates(
+                itemKeywords, itemName, itemFeature, item.getMatchedQuotaId(),
+                allQuotas, quotaKeywordsCache, quotaKeywordsSetCache, quotaNameCache, quotaFeatureCache,
+                config.getCandidatesPerItem());
         reviewItem.setCandidates(candidates);
 
-        // 计算传统算法得分作为参考
-        if (item.getMatchedQuotaId() != null && quotaKeywordsCache.containsKey(item.getMatchedQuotaId())) {
-            List<String> itemKeywords = new ArrayList<>();
-            if (item.getItemName() != null) itemKeywords.addAll(KeywordExtractor.extractKeywords(item.getItemName()));
-            if (item.getFeatureValue() != null) itemKeywords.addAll(KeywordExtractor.extractKeywords(item.getFeatureValue()));
-            double score = KeywordExtractor.calculateSimilarity(itemKeywords,
-                    quotaKeywordsCache.get(item.getMatchedQuotaId()));
+        // 计算传统算法得分作为参考（复用已提取的关键词）
+        if (item.getMatchedQuotaId() != null && quotaKeywordsSetCache.containsKey(item.getMatchedQuotaId())) {
+            Set<String> quotaKwSet = quotaKeywordsSetCache.get(item.getMatchedQuotaId());
+            double score = fastSimilarity(itemKeywords, quotaKwSet);
             reviewItem.setOriginalScore(score);
-        } else {
-            // 未匹配项：记录与最佳候选的 Jaccard 得分，供日志参考
-            if (reviewItem.getCandidates() != null && !reviewItem.getCandidates().isEmpty()) {
-                List<String> itemKeywords = new ArrayList<>();
-                if (item.getItemName() != null) itemKeywords.addAll(KeywordExtractor.extractKeywords(item.getItemName()));
-                if (item.getFeatureValue() != null) itemKeywords.addAll(KeywordExtractor.extractKeywords(item.getFeatureValue()));
-                double bestScore = 0;
-                for (AiReviewRequest.CandidateQuota c : reviewItem.getCandidates()) {
-                    List<String> kw = quotaKeywordsCache.get(c.getQuotaId());
-                    if (kw != null) {
-                        bestScore = Math.max(bestScore, KeywordExtractor.calculateSimilarity(itemKeywords, kw));
-                    }
+        } else if (candidates != null && !candidates.isEmpty()) {
+            // 未匹配项：记录与最佳候选的得分
+            double bestScore = 0;
+            for (AiReviewRequest.CandidateQuota c : candidates) {
+                Set<String> kwSet = quotaKeywordsSetCache.get(c.getQuotaId());
+                if (kwSet != null) {
+                    bestScore = Math.max(bestScore, fastSimilarity(itemKeywords, kwSet));
                 }
-                reviewItem.setOriginalScore(bestScore);
             }
+            reviewItem.setOriginalScore(bestScore);
         }
 
         return reviewItem;
     }
 
     /**
-     * 预筛选 Top-N 候选定额（使用 Jaccard 相似度）
+     * 快速相似度计算（纯 Set 操作，不做同义词/子串匹配，用于预筛选）
      */
-    private List<AiReviewRequest.CandidateQuota> filterTopCandidates(ProjectItem item,
-                                                                      List<EnterpriseQuota> allQuotas,
-                                                                      Map<Long, List<String>> quotaKeywordsCache,
-                                                                      Map<Long, String> quotaNameCache,
-                                                                      Map<Long, String> quotaFeatureCache,
-                                                                      int topN) {
-        List<String> itemKeywords = new ArrayList<>();
-        String itemName = item.getItemName() != null ? item.getItemName().trim() : "";
-        String itemFeature = item.getFeatureValue() != null ? item.getFeatureValue().trim() : "";
-        if (!itemName.isEmpty()) itemKeywords.addAll(KeywordExtractor.extractKeywords(itemName));
-        if (!itemFeature.isEmpty()) itemKeywords.addAll(KeywordExtractor.extractKeywords(itemFeature));
+    private double fastSimilarity(List<String> itemKeywords, Set<String> quotaKeywordSet) {
+        if (itemKeywords.isEmpty() || quotaKeywordSet.isEmpty()) return 0.0;
+        Set<String> itemSet = new HashSet<>(itemKeywords);
+        // 计算交集
+        int intersection = 0;
+        for (String k : itemSet) {
+            if (quotaKeywordSet.contains(k)) {
+                intersection++;
+            }
+        }
+        int union = itemSet.size() + quotaKeywordSet.size() - intersection;
+        return union == 0 ? 0.0 : (double) intersection / union;
+    }
 
-        List<Map.Entry<EnterpriseQuota, Double>> scored = new ArrayList<>();
+    /**
+     * 预筛选 Top-N 候选定额（优化版：预提取关键词 + 快速名称初筛 + HashSet 相似度）
+     */
+    private List<AiReviewRequest.CandidateQuota> filterTopCandidates(
+            List<String> itemKeywords, String itemName, String itemFeature, Long matchedQuotaId,
+            List<EnterpriseQuota> allQuotas,
+            Map<Long, List<String>> quotaKeywordsCache,
+            Map<Long, Set<String>> quotaKeywordsSetCache,
+            Map<Long, String> quotaNameCache,
+            Map<Long, String> quotaFeatureCache,
+            int topN) {
+
+        if (itemKeywords.isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        // 解析清单项名称中的核心词（用于快速初筛）
+        String itemCoreName = itemName != null ? itemName.replaceAll("[（(].*?[）)]", "").trim() : "";
+
+        List<Map.Entry<EnterpriseQuota, Double>> scored = new ArrayList<>(allQuotas.size());
+
+        double minThreshold = (matchedQuotaId == null) ? 0.05 : 0.1;
 
         for (EnterpriseQuota quota : allQuotas) {
-            List<String> quotaKeywords = quotaKeywordsCache.get(quota.getId());
-            if (quotaKeywords == null || quotaKeywords.isEmpty()) continue;
-            double score = KeywordExtractor.calculateSimilarity(itemKeywords, quotaKeywords);
-            // 未匹配项降低阈值到 0.05，确保能筛选出候选供 AI 语义匹配
-            double minThreshold = (item.getMatchedQuotaId() == null) ? 0.05 : 0.1;
+            Set<String> quotaKwSet = quotaKeywordsSetCache.get(quota.getId());
+            if (quotaKwSet == null || quotaKwSet.isEmpty()) continue;
+
+            // 快速名称初筛：清单名称核心词与定额名称至少有一个字重叠
+            String quotaName = quotaNameCache.getOrDefault(quota.getId(), quota.getQuotaName());
+            if (quotaName != null && !itemCoreName.isEmpty()) {
+                boolean nameOverlap = false;
+                for (int i = 0; i < itemCoreName.length(); i++) {
+                    if (quotaName.indexOf(itemCoreName.charAt(i)) >= 0) {
+                        nameOverlap = true;
+                        break;
+                    }
+                }
+                if (!nameOverlap) continue; // 名称无交集，直接跳过
+            }
+
+            // 快速 Jaccard（纯 Set 操作，不做同义词/子串匹配）
+            double score = fastSimilarity(itemKeywords, quotaKwSet);
             if (score > minThreshold) {
                 scored.add(new AbstractMap.SimpleEntry<>(quota, score));
             }
@@ -283,12 +436,12 @@ public class AiReviewService {
         }
 
         // 确保原匹配的定额在候选列表中（如果不在top-N中）
-        if (item.getMatchedQuotaId() != null) {
+        if (matchedQuotaId != null) {
             boolean hasOriginal = candidates.stream()
-                    .anyMatch(c -> c.getQuotaId().equals(item.getMatchedQuotaId()));
+                    .anyMatch(c -> c.getQuotaId().equals(matchedQuotaId));
             if (!hasOriginal) {
                 EnterpriseQuota original = allQuotas.stream()
-                        .filter(q -> q.getId().equals(item.getMatchedQuotaId()))
+                        .filter(q -> q.getId().equals(matchedQuotaId))
                         .findFirst().orElse(null);
                 if (original != null) {
                     AiReviewRequest.CandidateQuota c = new AiReviewRequest.CandidateQuota();
@@ -422,6 +575,7 @@ public class AiReviewService {
                             int promptTokens = usage.has("prompt_tokens") ? usage.get("prompt_tokens").asInt() : 0;
                             int completionTokens = usage.has("completion_tokens") ? usage.get("completion_tokens").asInt() : 0;
                             tokenTracker.recordUsage(promptTokens, completionTokens);
+                            System.out.println("[AI复核] API 调用成功, prompt_tokens=" + promptTokens + ", completion_tokens=" + completionTokens);
                         }
 
                         // 提取 content
@@ -432,16 +586,17 @@ public class AiReviewService {
                                 return message.get("content").asText();
                             }
                         }
+                        System.out.println("[AI复核] API 响应缺少 choices/message/content");
                         return null;
 
                     } else if (response.code() == 429) {
                         // 速率限制 - 指数退避
                         long waitMs = (long) Math.pow(2, attempt) * 1000;
-                        System.out.println("DeepSeek API 限流，等待 " + waitMs + "ms 后重试...");
+                        System.out.println("[AI复核] API 限流(429)，等待 " + waitMs + "ms 后重试...");
                         Thread.sleep(waitMs);
                     } else {
                         String errorBody = response.body() != null ? response.body().string() : "";
-                        System.err.println("DeepSeek API 错误 " + response.code() + ": " + errorBody);
+                        System.out.println("[AI复核] API 错误 HTTP " + response.code() + ": " + errorBody);
                         if (attempt < config.getMaxRetries()) {
                             Thread.sleep(1000);
                         }
@@ -449,7 +604,8 @@ public class AiReviewService {
                 }
             }
         } catch (Exception e) {
-            System.err.println("调用 DeepSeek API 异常: " + e.getMessage());
+            System.out.println("[AI复核] 调用 DeepSeek API 异常: " + e.getMessage());
+            e.printStackTrace(System.out);
         }
         return null;
     }

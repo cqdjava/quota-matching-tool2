@@ -939,6 +939,24 @@ tbody tr:hover {
     opacity: 0.6;
 }
 
+/* AI 停止按钮 */
+.btn-ai-stop {
+    padding: 8px 16px;
+    background: linear-gradient(135deg, #e53935 0%, #c62828 100%);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 800;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(229, 57, 53, 0.3);
+}
+.btn-ai-stop:hover {
+    background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%);
+    box-shadow: 0 4px 12px rgba(229, 57, 53, 0.5);
+}
+
 /* AI 建议行高亮 */
 tr.ai-suggest-row {
     background: #fff8e1 !important;
