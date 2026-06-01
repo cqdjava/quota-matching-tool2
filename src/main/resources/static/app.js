@@ -9,36 +9,176 @@ let currentVersionId = null; // 当前选中的版本ID
 let currentViewingVersionId = null; // 当前查看的版本明细ID
 let selectedRowIndex = -1; // 用于跟踪用户选择的行索引
 
+// ==================== 工具函数 ====================
+
+/** Toast 通知 */
+function showToast(message, type) {
+    type = type || 'info';
+    var container = document.getElementById('toastContainer');
+    if (!container) { alert(message); return; }
+    var toast = document.createElement('div');
+    toast.className = 'toast toast-' + type;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(function() {
+        toast.classList.add('removing');
+        setTimeout(function() { toast.remove(); }, 250);
+    }, 3000);
+}
+
+/** 自定义确认对话框（返回 Promise） */
+function showConfirm(message, title) {
+    title = title || '操作确认';
+    return new Promise(function(resolve) {
+        var overlay = document.createElement('div');
+        overlay.className = 'confirm-overlay';
+        // 图标映射
+        var icons = { '删除': '⚠️', '清空': '⚠️', '确定': '💡', '退出': '👋' };
+        var icon = '💡';
+        for (var k in icons) { if (title.indexOf(k) >= 0) { icon = icons[k]; break; } }
+
+        // 安全构建 DOM：用 createElement + textContent 替代 innerHTML 拼接，防止 XSS
+        var dialog = document.createElement('div');
+        dialog.className = 'confirm-dialog';
+        var iconEl = document.createElement('div');
+        iconEl.className = 'confirm-icon';
+        iconEl.textContent = icon;
+        var titleEl = document.createElement('div');
+        titleEl.className = 'confirm-title';
+        titleEl.textContent = title;
+        var bodyEl = document.createElement('div');
+        bodyEl.className = 'confirm-body';
+        bodyEl.textContent = message;
+        var actions = document.createElement('div');
+        actions.className = 'confirm-actions';
+        var cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn-secondary confirm-cancel';
+        cancelBtn.textContent = '取消';
+        cancelBtn.onclick = function() {
+            document.body.removeChild(overlay);
+            resolve(false);
+        };
+        var okBtn = document.createElement('button');
+        okBtn.className = 'btn-primary confirm-ok';
+        okBtn.textContent = '确定';
+        okBtn.onclick = function() {
+            document.body.removeChild(overlay);
+            resolve(true);
+        };
+        actions.appendChild(cancelBtn);
+        actions.appendChild(okBtn);
+        dialog.appendChild(iconEl);
+        dialog.appendChild(titleEl);
+        dialog.appendChild(bodyEl);
+        dialog.appendChild(actions);
+        overlay.appendChild(dialog);
+
+        overlay.onclick = function(e) {
+            if (e.target === overlay) { document.body.removeChild(overlay); resolve(false); }
+        };
+        document.body.appendChild(overlay);
+    });
+}
+
+/** 防抖 */
+function debounce(fn, delay) {
+    var timer = null;
+    return function() {
+        var context = this, args = arguments;
+        clearTimeout(timer);
+        timer = setTimeout(function() { fn.apply(context, args); }, delay);
+    };
+}
+
+/** 按钮加载状态 */
+function setLoading(btn, loading) {
+    if (!btn) return;
+    if (loading) {
+        btn._origHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span>' + (btn.textContent || '处理中...');
+        btn.classList.add('btn-loading');
+    } else {
+        btn.disabled = false;
+        if (btn._origHtml) btn.innerHTML = btn._origHtml;
+        btn.classList.remove('btn-loading');
+    }
+}
+
+/** 侧边栏 hover 展开/收起（默认收起，hover 展开，移出延迟 300ms 收起） */
+(function initSidebarHover() {
+    var sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    var collapseTimer = null;
+    var COLLAPSE_DELAY = 300;
+
+    sidebar.addEventListener('mouseenter', function() {
+        if (collapseTimer) {
+            clearTimeout(collapseTimer);
+            collapseTimer = null;
+        }
+        sidebar.classList.remove('collapsed');
+    });
+
+    sidebar.addEventListener('mouseleave', function() {
+        collapseTimer = setTimeout(function() {
+            sidebar.classList.add('collapsed');
+        }, COLLAPSE_DELAY);
+    });
+})();
+
+// 全局覆盖 alert → toast（自动识别消息类型）
+// 注意：失败/错误检查优先于成功，避免"部分成功但部分失败"类消息被判为 success
+var _origAlert = window.alert;
+window.alert = function(msg) {
+    var s = String(msg);
+    var type = 'info';
+    if (s.indexOf('失败') >= 0 || s.indexOf('错误') >= 0 || s.indexOf('出错') >= 0) {
+        type = 'error';
+    } else if (s.indexOf('成功') >= 0 || s.indexOf('完成') >= 0) {
+        type = 'success';
+    } else if (s.indexOf('导入') >= 0 && s.indexOf('条') >= 0) {
+        type = 'success';
+    } else if (s.indexOf('请') >= 0 || s.indexOf('不能为空') >= 0 || s.indexOf('无效') >= 0 ||
+               s.indexOf('先选择') >= 0 || s.indexOf('无权限') >= 0 || s.indexOf('至少') >= 0 ||
+               s.indexOf('必须是') >= 0 || s.indexOf('已添加') >= 0 || s.indexOf('已存在') >= 0) {
+        type = 'warning';
+    }
+    showToast(s, type);
+};
+
 window.onload = function() {
     try {
-        // 检查登录状态
         checkLoginStatus();
-        
-        // 使用延迟加载，避免并发请求过多
-        setTimeout(() => {
+
+        // 确保默认显示 AI 助手页面
+        switchNav('assistant');
+        renderChatMessages(); // 初始化欢迎页+输入框
+
+        // 搜索框防抖初始化
+        var searchInput = document.getElementById('searchInput');
+        if (searchInput) { searchInput.removeAttribute('onkeyup'); searchInput.addEventListener('input', debounce(filterItems, 200)); }
+        var quotaMgmtSearch = document.getElementById('quotaManagementSearchInput');
+        if (quotaMgmtSearch) { quotaMgmtSearch.removeAttribute('onkeyup'); quotaMgmtSearch.addEventListener('input', debounce(filterQuotas, 200)); }
+        // 模态框中的搜索框保持 onkeyup 属性，在 openEditModal 中动态绑定防抖
+
+        setTimeout(function() {
+            // 初始化 Lucide 图标
+            if (typeof lucide !== 'undefined') { lucide.createIcons(); }
             loadItems();
             loadVersions();
             loadVersionOptions();
-            checkCurrentUserRole(); // 检查当前用户角色
-            loadUsers(); // 加载用户列表
-            loadDocumentTemplates(); // 加载文档模板列表
-            loadReplacementTemplates(); // 加载替换内容模板列表
-            checkAIStatus(); // 检查AI复核状态
+            checkCurrentUserRole();
+            loadUsers();
+            loadDocumentTemplates();
+            loadReplacementTemplates();
+            checkAIStatus();
         }, 100);
-        
-        // 确保表格容器可以正常滚动
-        setTimeout(() => {
-            ensureTableScrolling();
-        }, 200);
-        
-        // 调试信息
-        console.log('页面加载完成，函数检查：');
-        console.log('switchNav:', typeof switchNav);
-        console.log('loadVersions:', typeof loadVersions);
-        console.log('openVersionEditModal:', typeof openVersionEditModal);
+
+        console.log('页面加载完成');
     } catch (error) {
         console.error('页面加载错误：', error);
-        alert('页面加载出错：' + error.message);
+        showToast('页面加载出错：' + error.message, 'error');
     }
 };
 
@@ -64,10 +204,9 @@ async function checkLoginStatus() {
 
 // 退出登录
 async function logout() {
-    if (!confirm('确定要退出登录吗？')) {
-        return;
-    }
-    
+    var ok = await showConfirm('确定要退出登录吗？', '退出登录');
+    if (!ok) return;
+
     try {
         const response = await fetch('/api/auth/logout', {
             method: 'POST'
@@ -78,65 +217,17 @@ async function logout() {
         }
     } catch (error) {
         console.error('退出登录失败:', error);
-        alert('退出登录失败：' + error.message);
+        showToast('退出登录失败：' + error.message, 'error');
     }
 }
 
-// 确保表格容器可以正常滚动
+// 确保表格容器可以正常滚动（简化版——新版CSS已修复flex布局问题）
 function ensureTableScrolling() {
-    const containers = ['itemsTableContainer', 'quotasTableContainer', 'versionsTableContainer'];
-    
-    containers.forEach(containerId => {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        
-        // 确保容器可见并可以滚动
-        container.style.overflowY = 'auto';
-        container.style.overflowX = 'auto';
-        container.style.visibility = 'visible';
-        
-        // 确保表格容器内容可见
-        const table = container.querySelector('table');
-        if (table) {
-            table.style.visibility = 'visible';
-            
-            // 确保tbody和所有行可见
-            const tbody = table.querySelector('tbody');
-            if (tbody) {
-                tbody.style.display = 'table-row-group';
-                tbody.style.visibility = 'visible';
-                
-                // 确保所有行和单元格可见
-                const rows = tbody.querySelectorAll('tr');
-                rows.forEach(row => {
-                    row.style.display = 'table-row';
-                    row.style.visibility = 'visible';
-                    
-                    const cells = row.querySelectorAll('td, th');
-                    cells.forEach(cell => {
-                        cell.style.display = 'table-cell';
-                        cell.style.visibility = 'visible';
-                    });
-                });
-            }
-        }
-        
-        // 确保父容器链都有正确的高度设置
-        let parent = container.parentElement;
-        while (parent && parent !== document.body) {
-            const style = window.getComputedStyle(parent);
-            if (style.display === 'flex' && style.flexDirection === 'column') {
-                parent.style.minHeight = '0';
-                if (parent.classList.contains('data-panel') || parent.classList.contains('quota-management-panel')) {
-                    parent.style.flex = '1';
-                }
-            }
-            parent = parent.parentElement;
-        }
-    });
-    
-    // 强制重排以确保所有样式更改生效
-    document.body.offsetHeight;
+    var containers = document.querySelectorAll('.table-container');
+    for (var i = 0; i < containers.length; i++) {
+        containers[i].style.overflowY = 'auto';
+        containers[i].style.overflowX = 'auto';
+    }
 }
 
 async function importQuotas() {
@@ -269,8 +360,7 @@ async function startAiReview() {
     const versionSelect = document.getElementById('versionSelect');
     const versionId = versionSelect ? versionSelect.value : '';
 
-    aiBtn.disabled = true;
-    aiBtn.textContent = '提交中...';
+    setLoading(aiBtn, true);
 
     try {
         const url = '/api/ai/review?versionId=' + (versionId || '');
@@ -279,35 +369,35 @@ async function startAiReview() {
 
         if (result.success) {
             aiStatus.textContent = '已提交，后台处理中...';
-            aiStatus.style.color = '#888';
+            aiStatus.style.color = 'var(--text-tertiary)';
             // 开始轮询进度
             aiWasRunning = true;
             if (aiPollTimer) clearInterval(aiPollTimer);
             aiPollTimer = setInterval(checkAIStatus, 2000);
+            // AI 复核按钮在运行期间由 checkAIStatus 管理状态
         } else {
             aiStatus.textContent = result.message || 'AI复核失败';
-            aiStatus.style.color = '#c62828';
-            aiBtn.disabled = false;
-            aiBtn.textContent = 'AI复核';
+            aiStatus.style.color = 'var(--danger)';
+            setLoading(aiBtn, false);
         }
     } catch (error) {
         aiStatus.textContent = 'AI复核请求失败';
-        aiStatus.style.color = '#c62828';
-        aiBtn.disabled = false;
-        aiBtn.textContent = 'AI复核';
+        aiStatus.style.color = 'var(--danger)';
+        setLoading(aiBtn, false);
     }
 }
 
 /** 手动停止 AI 复核 */
 async function cancelAiReview() {
-    if (!confirm('确定要停止当前的 AI 复核吗？已完成的批次不会回退。')) return;
+    var ok = await showConfirm('确定要停止当前的 AI 复核吗？已完成的批次不会回退。', '停止AI复核');
+    if (!ok) return;
     try {
         const response = await fetch('/api/ai/cancel', { method: 'POST' });
         const result = await response.json();
         const aiStatus = document.getElementById('aiReviewStatus');
         if (aiStatus) {
             aiStatus.textContent = result.message;
-            aiStatus.style.color = '#888';
+            aiStatus.style.color = 'var(--text-tertiary)';
         }
     } catch (error) {
         console.error('停止AI复核失败：', error);
@@ -316,33 +406,35 @@ async function cancelAiReview() {
 
 /** 接受 AI 建议 */
 async function acceptAiSuggestion(itemId) {
-    if (!confirm('确定要接受AI的建议吗？将更新此清单项的匹配定额。')) return;
+    var ok = await showConfirm('确定要接受AI的建议吗？将更新此清单项的匹配定额。', '接受AI建议');
+    if (!ok) return;
     try {
         const response = await fetch('/api/ai/accept/' + itemId, { method: 'POST' });
         const result = await response.json();
         if (result.success) {
             loadItems();
         } else {
-            alert(result.message);
+            showToast(result.message, 'error');
         }
     } catch (error) {
-        alert('操作失败：' + error.message);
+        showToast('操作失败：' + error.message, 'error');
     }
 }
 
 /** 拒绝 AI 建议 */
 async function rejectAiSuggestion(itemId) {
-    if (!confirm('确定要拒绝AI的建议吗？将恢复原来的匹配结果。')) return;
+    var ok = await showConfirm('确定要拒绝AI的建议吗？将恢复原来的匹配结果。', '拒绝AI建议');
+    if (!ok) return;
     try {
         const response = await fetch('/api/ai/reject/' + itemId, { method: 'POST' });
         const result = await response.json();
         if (result.success) {
             loadItems();
         } else {
-            alert(result.message);
+            showToast(result.message, 'error');
         }
     } catch (error) {
-        alert('操作失败：' + error.message);
+        showToast('操作失败：' + error.message, 'error');
     }
 }
 
@@ -359,11 +451,9 @@ async function checkAIStatus() {
         const aiBtn = document.getElementById('aiReviewBtn');
         const aiStatus = document.getElementById('aiReviewStatus');
         const progress = result.progress || {};
-
         const stopBtn = document.getElementById('aiStopBtn');
 
         if (result.running) {
-            // 复核运行中 → 按钮变灰 + 显示进度 + 显示停止按钮
             aiWasRunning = true;
             if (aiBtn) {
                 aiBtn.disabled = true;
@@ -372,18 +462,32 @@ async function checkAIStatus() {
             }
             if (stopBtn) stopBtn.style.display = 'inline-block';
             if (aiStatus) {
-                const pct = progress.percent || 0;
-                aiStatus.textContent = '复核中 ' + pct + '% (批次 '
-                    + (progress.currentBatch || 0) + '/' + (progress.totalBatches || 0)
-                    + ', ' + (progress.processedItems || 0) + '/' + (progress.totalItems || 0) + ' 条)';
-                aiStatus.style.color = '#e65100';
+                var pct = Number(progress.percent) || 0;
+                var currentBatch = Number(progress.currentBatch) || 0;
+                var totalBatches = Number(progress.totalBatches) || 0;
+                var processedItems = Number(progress.processedItems) || 0;
+                var totalItems = Number(progress.totalItems) || 0;
+                // 安全构建 DOM：用 createElement + textContent 替代 innerHTML
+                var wrapper = document.createElement('span');
+                wrapper.className = 'ai-progress-wrapper';
+                var bar = document.createElement('span');
+                bar.className = 'ai-progress-bar';
+                var fill = document.createElement('span');
+                fill.className = 'ai-progress-fill';
+                fill.style.width = pct + '%';
+                bar.appendChild(fill);
+                var text = document.createElement('span');
+                text.className = 'ai-progress-text';
+                text.textContent = pct + '% (批次 ' + currentBatch + '/' + totalBatches + ', ' + processedItems + '/' + totalItems + ' 条)';
+                wrapper.appendChild(bar);
+                wrapper.appendChild(text);
+                aiStatus.textContent = '';
+                aiStatus.appendChild(wrapper);
             }
-            // 继续轮询
             if (!aiPollTimer) {
                 aiPollTimer = setInterval(checkAIStatus, 2000);
             }
         } else {
-            // 不在运行 → 隐藏停止按钮
             if (aiBtn) {
                 aiBtn.textContent = 'AI复核';
                 if (result.enabled) {
@@ -395,28 +499,48 @@ async function checkAIStatus() {
                 }
             }
             if (stopBtn) stopBtn.style.display = 'none';
-            // 刚完成 → 刷新列表 + 显示统计
             if (aiWasRunning) {
                 aiWasRunning = false;
                 if (aiStatus) {
-                    aiStatus.textContent = '复核完成，变更 ' + (progress.changedItems || 0) + ' 条';
-                    aiStatus.style.color = (progress.changedItems > 0) ? '#e65100' : '#2e7d32';
+                    var doneWrapper = document.createElement('span');
+                    doneWrapper.className = 'ai-progress-wrapper';
+                    var doneBar = document.createElement('span');
+                    doneBar.className = 'ai-progress-bar';
+                    var doneFill = document.createElement('span');
+                    doneFill.className = 'ai-progress-fill';
+                    doneFill.style.width = '100%';
+                    doneFill.style.background = '#52c41a';
+                    doneBar.appendChild(doneFill);
+                    var doneText = document.createElement('span');
+                    doneText.className = 'ai-progress-text';
+                    doneText.style.color = '#52c41a';
+                    doneText.textContent = '复核完成，变更 ' + (Number(progress.changedItems) || 0) + ' 条';
+                    doneWrapper.appendChild(doneBar);
+                    doneWrapper.appendChild(doneText);
+                    aiStatus.textContent = '';
+                    aiStatus.appendChild(doneWrapper);
                 }
                 loadItems();
             } else if (aiStatus && result.tokenUsage && result.tokenUsage.totalCalls > 0) {
-                aiStatus.textContent = 'Token: ' + (result.tokenUsage.totalTokens || 0);
-                aiStatus.style.color = '#888';
+                aiStatus.textContent = 'Token: ' + (Number(result.tokenUsage.totalTokens) || 0);
+                aiStatus.style.color = 'var(--text-tertiary)';
             }
-            // 停止轮询
             if (aiPollTimer) {
                 clearInterval(aiPollTimer);
                 aiPollTimer = null;
             }
         }
     } catch (e) {
-        // AI 端点不可用
+        // API 不可用时清除定时器，停止无限轮询
+        if (aiPollTimer) {
+            clearInterval(aiPollTimer);
+            aiPollTimer = null;
+        }
+        aiWasRunning = false;
         const aiBtn = document.getElementById('aiReviewBtn');
+        const stopBtn = document.getElementById('aiStopBtn');
         if (aiBtn) { aiBtn.disabled = true; aiBtn.title = 'AI复核服务不可用'; }
+        if (stopBtn) stopBtn.style.display = 'none';
     }
 }
 
@@ -843,8 +967,16 @@ async function openEditModal(itemId) {
     document.getElementById('editModal').style.display = 'block';
     document.getElementById('quotaList').innerHTML = '<p>请输入关键词搜索企业定额</p>';
     document.getElementById('quotaSearchInput').value = '';
+
+    // 模态框搜索防抖（替换 HTML 中的 onkeyup 属性）
+    var quotaSearch = document.getElementById('quotaSearchInput');
+    if (quotaSearch) {
+        quotaSearch.removeAttribute('onkeyup');
+        quotaSearch.oninput = debounce(searchQuotas, 300);
+    }
+
     document.getElementById('manualPrice').value = '';
-    
+
     // 同步版本选择：使用匹配界面的版本下拉框值
     const versionSelect = document.getElementById('versionSelect');
     if (versionSelect && versionSelect.value) {
@@ -852,7 +984,7 @@ async function openEditModal(itemId) {
     } else {
         currentVersionId = null;
     }
-    
+
     // 加载已添加的定额
     await loadItemQuotas(itemId);
 }
@@ -1401,50 +1533,217 @@ window.onclick = function(event) {
     }
 }
 
+// ==================== AI 助手聊天 ====================
+const CHAT_API = '/api/assistant';
+var chatMessages = []; // 当前会话消息
+
+/** 发送消息 */
+async function sendMessage() {
+    var input = document.getElementById('chatInput');
+    var question = (input.value || '').trim();
+    if (!question) return;
+
+    // 添加用户消息
+    appendChatMessage('user', question);
+    input.value = '';
+    input.focus();
+
+    // 显示加载动画
+    showChatLoading();
+
+    try {
+        var response = await fetch(CHAT_API + '/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ question: question })
+        });
+        var result = await response.json();
+
+        removeChatLoading();
+
+        if (result.success) {
+            appendChatMessage('assistant', result.answer, result.sources || []);
+        } else {
+            appendChatMessage('assistant', result.answer || ('抱歉，处理您的问题时出错了：' + (result.message || '未知错误')));
+        }
+    } catch (e) {
+        removeChatLoading();
+        appendChatMessage('assistant', '网络请求失败：' + e.message + '。请检查网络连接后重试。');
+    }
+}
+
+/** 推荐问题快捷发送 */
+function sendSuggestion(el) {
+    var input = document.getElementById('chatInput');
+    input.value = el.textContent.trim();
+    sendMessage();
+}
+
+/** 添加消息到聊天界面 */
+function appendChatMessage(role, content, sources) {
+    chatMessages.push({ role: role, content: content, sources: sources, time: new Date() });
+    renderChatMessages();
+}
+
+/** 渲染聊天消息 */
+function renderChatMessages() {
+    var container = document.getElementById('chatMessagesInner');
+    if (!container) return;
+
+    var hasMessages = chatMessages.length > 0;
+    var html = '';
+
+    if (!hasMessages) {
+        // 空状态：欢迎语 + 输入框（居中显示）
+        html +=
+            '<div class="chat-welcome">' +
+            '<div class="welcome-icon"><i data-lucide="bot"></i></div>' +
+            '<h3>AI 定额助手</h3>' +
+            '<p>我可以基于已上传的企业定额数据回答您的问题</p>' +
+            '<div class="suggestion-chips">' +
+            '<span onclick="sendSuggestion(this)">电缆敷设施工费是多少？</span>' +
+            '<span onclick="sendSuggestion(this)">路灯安装的定额单价怎么套？</span>' +
+            '<span onclick="sendSuggestion(this)">给排水管道敷设有哪些相关定额？</span>' +
+            '</div></div>';
+    } else {
+        // 有消息：渲染消息列表
+        for (var i = 0; i < chatMessages.length; i++) {
+            var msg = chatMessages[i];
+            var timeStr = msg.time ? formatChatTime(msg.time) : '';
+            if (msg.role === 'user') {
+                html += '<div class="chat-message user">' +
+                    '<div class="message-bubble">' + escapeHtml(msg.content) + '</div>' +
+                    '<div class="message-time">' + timeStr + '</div></div>';
+            } else {
+                html += '<div class="chat-message assistant">' +
+                    '<div class="message-bubble">' + formatChatContent(msg.content) + '</div>';
+                if (msg.sources && msg.sources.length > 0) {
+                    html += '<div class="source-citations">' +
+                        '<div class="source-title">📌 数据来源</div>';
+                    for (var s = 0; s < msg.sources.length; s++) {
+                        html += '<div class="source-item"><span class="source-dot">•</span>' +
+                            escapeHtml(msg.sources[s].label || msg.sources[s]) + '</div>';
+                    }
+                    html += '</div>';
+                }
+                html += '<div class="message-time">' + timeStr + '</div></div>';
+            }
+        }
+    }
+
+    // 始终包含输入框
+    html += buildInputAreaHtml();
+
+    container.innerHTML = html;
+    container.classList.toggle('has-messages', hasMessages);
+
+    // 滚动到底部
+    var scrollContainer = document.getElementById('chatMessages');
+    if (scrollContainer) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }
+
+    // 重新初始化 Lucide 图标
+    if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+}
+
+/** 构建输入框 HTML */
+function buildInputAreaHtml() {
+    return '<div class="chat-input-area">' +
+        '<div class="chat-input-inner">' +
+        '<input type="text" id="chatInput" placeholder="输入您的问题，基于定额数据智能回答..."' +
+        ' onkeydown="if(event.key===\'Enter\')sendMessage()">' +
+        '<button onclick="sendMessage()" id="chatSendBtn" class="btn-primary" title="发送">' +
+        '<i data-lucide="send"></i></button>' +
+        '</div></div>';
+}
+
+/** 格式化聊天内容（处理换行和markdown基础语法） */
+function formatChatContent(text) {
+    if (!text) return '';
+    // HTML 转义
+    var escaped = escapeHtml(text);
+    // 换行
+    escaped = escaped.replace(/\n/g, '<br>');
+    // 粗体 **text**
+    escaped = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    return escaped;
+}
+
+/** 格式化时间 */
+function formatChatTime(date) {
+    var h = date.getHours();
+    var m = date.getMinutes();
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+}
+
+/** HTML 转义 */
+function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(text));
+    return div.innerHTML;
+}
+
+/** 显示加载动画 */
+function showChatLoading() {
+    var container = document.getElementById('chatMessagesInner');
+    if (!container) return;
+    var loading = document.createElement('div');
+    loading.className = 'chat-loading';
+    loading.id = 'chatLoading';
+    loading.innerHTML =
+        '<div class="typing-dots">' +
+        '<span></span><span></span><span></span>' +
+        '</div>';
+    container.appendChild(loading);
+    container.scrollTop = container.scrollHeight;
+}
+
+/** 移除加载动画 */
+function removeChatLoading() {
+    var loading = document.getElementById('chatLoading');
+    if (loading) loading.remove();
+}
+
 // ==================== 导航切换 ====================
 function switchNav(navName) {
-    // 隐藏所有标签页内容
-    document.querySelectorAll('.tab-content').forEach(tab => {
+    // 隐藏所有标签页
+    document.querySelectorAll('.tab-content').forEach(function(tab) {
         tab.classList.remove('active');
-        tab.style.display = 'none';
     });
-    
-    // 移除所有导航项的active状态
-    document.querySelectorAll('.nav-item').forEach(item => {
+
+    // 更新侧边栏 nav-item 激活状态
+    document.querySelectorAll('.sidebar .nav-item').forEach(function(item) {
         item.classList.remove('active');
     });
-    document.querySelectorAll('.top-nav-item').forEach(item => {
-        item.classList.remove('active');
-    });
-    
-    // 显示选中的导航页
-    if (navName === 'items') {
+    var activeNav = document.querySelector('.sidebar .nav-item[data-nav="' + navName + '"]');
+    if (activeNav) activeNav.classList.add('active');
+
+    // 更新面包屑
+    var breadcrumb = document.getElementById('breadcrumbCurrent');
+    var labels = { assistant: 'AI助手', items: '定额匹配', versions: '定额管理', document: '文档生成', users: '用户管理' };
+
+    if (navName === 'assistant') {
+        document.getElementById('assistantTab').classList.add('active');
+        if (breadcrumb) breadcrumb.textContent = labels.assistant;
+    } else if (navName === 'items') {
         document.getElementById('itemsTab').classList.add('active');
-        document.getElementById('itemsTab').style.display = 'flex';
-        document.querySelectorAll('.nav-item')[0]?.classList.add('active');
-        document.querySelectorAll('.top-nav-item')[0]?.classList.add('active');
+        if (breadcrumb) breadcrumb.textContent = labels.items;
         loadItems();
     } else if (navName === 'versions') {
         document.getElementById('versionsTab').classList.add('active');
-        document.getElementById('versionsTab').style.display = 'flex';
-        document.querySelectorAll('.nav-item')[1]?.classList.add('active');
-        document.querySelectorAll('.top-nav-item')[1]?.classList.add('active');
+        var versionDetailTab = document.getElementById('versionDetailTab');
+        if (versionDetailTab) versionDetailTab.classList.remove('active');
+        if (breadcrumb) breadcrumb.textContent = labels.versions;
         loadVersions();
     } else if (navName === 'users') {
-        const usersTab = document.getElementById('usersTab');
-        if (usersTab) {
-            usersTab.classList.add('active');
-            usersTab.style.display = 'flex';
-            document.querySelectorAll('.nav-item')[3]?.classList.add('active');
-            document.querySelectorAll('.top-nav-item')[3]?.classList.add('active');
-            loadUsers();
-        }
+        var usersTab = document.getElementById('usersTab');
+        if (usersTab) usersTab.classList.add('active');
+        if (breadcrumb) breadcrumb.textContent = labels.users;
+        loadUsers();
     } else if (navName === 'document') {
         document.getElementById('documentTab').classList.add('active');
-        document.getElementById('documentTab').style.display = 'flex';
-        document.querySelectorAll('.nav-item')[2]?.classList.add('active');
-        document.querySelectorAll('.top-nav-item')[2]?.classList.add('active');
-        // 加载模板列表
+        if (breadcrumb) breadcrumb.textContent = labels.document;
         loadDocumentTemplates();
         loadReplacementTemplates();
     }
@@ -2360,36 +2659,28 @@ function renderVersionsTable(versions) {
 // 查看版本明细
 function viewVersionDetail(versionId, versionName) {
     currentViewingVersionId = versionId;
-    const titleEl = document.getElementById('versionDetailTitle');
-    if (titleEl) {
-        titleEl.textContent = versionName + ' - 定额明细';
-    }
-    const versionsTab = document.getElementById('versionsTab');
-    const versionDetailTab = document.getElementById('versionDetailTab');
-    if (versionsTab) {
-        versionsTab.classList.remove('active');
-        versionsTab.style.display = 'none';
-    }
-    if (versionDetailTab) {
-        versionDetailTab.classList.add('active');
-        versionDetailTab.style.display = 'flex';
-    }
+    var titleEl = document.getElementById('versionDetailTitle');
+    if (titleEl) titleEl.textContent = versionName + ' - 定额明细';
+    var versionsTab = document.getElementById('versionsTab');
+    var versionDetailTab = document.getElementById('versionDetailTab');
+    if (versionsTab) versionsTab.classList.remove('active');
+    if (versionDetailTab) versionDetailTab.classList.add('active');
+    // 更新面包屑
+    var breadcrumb = document.getElementById('breadcrumbCurrent');
+    if (breadcrumb) breadcrumb.textContent = versionName + ' - 定额明细';
     loadQuotas();
 }
 
 // 返回版本列表
 function backToVersionList() {
     currentViewingVersionId = null;
-    const versionDetailTab = document.getElementById('versionDetailTab');
-    const versionsTab = document.getElementById('versionsTab');
-    if (versionDetailTab) {
-        versionDetailTab.classList.remove('active');
-        versionDetailTab.style.display = 'none';
-    }
-    if (versionsTab) {
-        versionsTab.classList.add('active');
-        versionsTab.style.display = 'flex';
-    }
+    var versionDetailTab = document.getElementById('versionDetailTab');
+    var versionsTab = document.getElementById('versionsTab');
+    if (versionDetailTab) versionDetailTab.classList.remove('active');
+    if (versionsTab) versionsTab.classList.add('active');
+    // 恢复面包屑
+    var breadcrumb = document.getElementById('breadcrumbCurrent');
+    if (breadcrumb) breadcrumb.textContent = '定额管理';
     loadVersions();
 }
 
@@ -3886,120 +4177,20 @@ if (typeof window !== 'undefined') {
     window.updateTemplateFileLabel = updateTemplateFileLabel;
 }
 
-// 强制刷新表格显示，解决内容隐藏问题
-function forceRefreshTableDisplay() {
-    // 重新渲染当前活动标签页的表格
-    const activeTab = document.querySelector('.tab-content.active');
-    if (activeTab) {
-        const tabId = activeTab.id;
-        if (tabId === 'itemsTab') {
-            loadItems();
-        } else if (tabId === 'versionsTab') {
-            loadVersions();
-        } else if (tabId === 'usersTab') {
-            loadUsers();
-        } else if (tabId === 'versionDetailTab') {
-            loadQuotas();
-        }
+// 修复表格显示问题（确保 overflow 样式正确应用，新版CSS已从根本上解决）
+// 保留供外部调用兼容
+function fixTableVisibility() {
+    var containers = document.querySelectorAll('.table-container');
+    for (var i = 0; i < containers.length; i++) {
+        containers[i].style.overflowY = 'auto';
+        containers[i].style.overflowX = 'auto';
     }
 }
 
-// 修复表格显示问题，确保表格内容始终可见
-function fixTableVisibility() {
-    // 确保所有表格容器和内容都可见
-    const tableSelectors = ['.table-container', '#itemsTableBody', '#quotasTableBody', '#versionsTableBody', '#usersTableBody'];
-    
-    tableSelectors.forEach(selector => {
-        const elements = document.querySelectorAll(selector);
-        elements.forEach(element => {
-            if (element) {
-                element.style.visibility = 'visible';
-                element.style.display = '';
-                element.style.opacity = '1';
-                
-                // 检查并修复表格行的显示
-                if (element.tagName.toLowerCase() === 'tbody' || element.id.includes('Body')) {
-                    const rows = element.querySelectorAll('tr');
-                    rows.forEach(row => {
-                        row.style.visibility = 'visible';
-                        row.style.display = 'table-row';
-                        
-                        // 检查单元格是否可见
-                        const cells = row.querySelectorAll('td, th');
-                        cells.forEach(cell => {
-                            cell.style.visibility = 'visible';
-                            cell.style.display = '';
-                        });
-                    });
-                }
-            }
-        });
-    });
-    
-    // 强制重排以应用样式更改
-    document.body.offsetHeight;
-}
-
-// 在页面加载完成后应用表格可见性修复
-// 使用多种方法确保页面完全加载后执行
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() {
-        setTimeout(fixTableVisibility, 100);
-        setTimeout(() => {
-            // 确保默认显示项目清单标签页
-            switchNav('items');
-        }, 200);
-    });
-} else {
-    // 如果页面已加载完成，直接执行
-    setTimeout(fixTableVisibility, 100);
-    setTimeout(() => {
-        // 确保默认显示项目清单标签页
-        switchNav('items');
-    }, 200);
-}
-
-// 监听页面完全加载完成事件
-window.addEventListener('load', function() {
-    setTimeout(fixTableVisibility, 100);
-    setTimeout(() => {
-        // 确保默认显示项目清单标签页
-        switchNav('items');
-        // 再次确保表格滚动功能
-        ensureTableScrolling();
-    }, 200);
-});
-
-// 页面完全加载后初始化表格显示
-window.addEventListener('load', function() {
-    // 确保所有表格元素可见
-    setTimeout(() => {
-        const tableBodies = ['#itemsTableBody', '#quotasTableBody', '#versionsTableBody', '#usersTableBody'];
-        tableBodies.forEach(selector => {
-            const tbody = document.querySelector(selector);
-            if (tbody) {
-                // 确保tbody显示正常
-                tbody.style.display = 'table-row-group';
-                tbody.style.visibility = 'visible';
-                
-                // 检查表格行是否可见
-                const rows = tbody.querySelectorAll('tr');
-                rows.forEach(row => {
-                    row.style.display = 'table-row';
-                    row.style.visibility = 'visible';
-                });
-            }
-        });
-        
-        // 确保表格容器可见
-        ensureTableScrolling();
-    }, 300);
-});
-
-// 将函数添加到全局作用域
+// 将函数添加到全局作用域（向后兼容）
 if (typeof window !== 'undefined') {
-    window.forceRefreshTableDisplay = forceRefreshTableDisplay;
     window.fixTableVisibility = fixTableVisibility;
+    // forceRefreshTableDisplay 已移除：需要刷新时直接调用对应 tab 的 load 函数
 }
 
 // 更新文件选择框标签
