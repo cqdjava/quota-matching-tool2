@@ -1524,7 +1524,10 @@ window.onclick = function(event) {
                     // 检查表格行是否可见
                     const rows = tbody.querySelectorAll('tr');
                     rows.forEach(row => {
-                        row.style.display = 'table-row';
+                        // 不覆盖筛选功能设置的隐藏状态
+                        if (row.style.display !== 'none') {
+                            row.style.display = 'table-row';
+                        }
                         row.style.visibility = 'visible';
                     });
                 }
@@ -1532,6 +1535,9 @@ window.onclick = function(event) {
         }, 10);
     }
 }
+
+// 当前搜索关键字（用于恢复筛选状态）
+let currentQuotaSearchKeyword = '';
 
 // ==================== AI 助手聊天 ====================
 const CHAT_API = '/api/assistant';
@@ -1617,15 +1623,6 @@ function renderChatMessages() {
             } else {
                 html += '<div class="chat-message assistant">' +
                     '<div class="message-bubble">' + formatChatContent(msg.content) + '</div>';
-                if (msg.sources && msg.sources.length > 0) {
-                    html += '<div class="source-citations">' +
-                        '<div class="source-title">📌 数据来源</div>';
-                    for (var s = 0; s < msg.sources.length; s++) {
-                        html += '<div class="source-item"><span class="source-dot">•</span>' +
-                            escapeHtml(msg.sources[s].label || msg.sources[s]) + '</div>';
-                    }
-                    html += '</div>';
-                }
                 html += '<div class="message-time">' + timeStr + '</div></div>';
             }
         }
@@ -2201,6 +2198,7 @@ function filterQuotas() {
     const searchInput = document.getElementById('quotaManagementSearchInput');
     if (!searchInput) return;
     const keyword = searchInput.value.toLowerCase();
+    currentQuotaSearchKeyword = keyword;  // 保存筛选关键字
     const rows = document.querySelectorAll('#quotasTableBody tr');
     
     rows.forEach(row => {

@@ -51,8 +51,8 @@ public class AssistantController {
 
         } catch (Exception e) {
             result.put("success", false);
-            result.put("message", "处理失败：" + e.getMessage());
-            result.put("answer", "抱歉，处理您的问题时出错了：" + e.getMessage());
+            result.put("message", "AI 助手服务暂时不可用，请稍后重试");
+            result.put("answer", "抱歉，处理您的问题时出错了，请稍后重试。");
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(result);
         }
     }
